@@ -15,16 +15,13 @@ setup(
     zip_safe=True,
     maintainer='vboxuser_anagha',
     maintainer_email='vboxuser_anagha@todo.todo',
-    description='TODO: Package description',
+    description='Package for HRI project with RL',
     license='TODO: License declaration',
-    extras_require={
-        'test': [
-            'pytest',
-        ],
-    },
+    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'hri_node = hri_control.hri_node:main'
+            'train = hri_control.train:main',  # <-- THIS IS THE NEW LINE
+            # 'hri_node = hri_control.hri_node:main', # <-- We removed the old node
         ],
     },
 )
