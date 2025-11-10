@@ -1,4 +1,6 @@
 from setuptools import find_packages, setup
+import os           # <-- MAKE SURE THIS IS HERE
+from glob import glob     # <-- MAKE SURE THIS IS HERE
 
 package_name = 'hri_control'
 
@@ -10,6 +12,11 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        
+        # --- MAKE SURE THIS BLOCK IS HERE ---
+        (os.path.join('share', package_name, 'launch'), 
+            glob(os.path.join('launch', '*.launch.py'))),
+        # --- END OF BLOCK ---
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -20,8 +27,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'train = hri_control.train:main',  # <-- THIS IS THE NEW LINE
-            # 'hri_node = hri_control.hri_node:main', # <-- We removed the old node
+            'train = hri_control.train:main',
+            'hand_simulator = hri_control.hand_simulator:main',
         ],
     },
 )

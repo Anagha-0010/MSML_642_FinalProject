@@ -74,6 +74,9 @@ class HriEnv(Node, gym.Env):
         self.current_step = 0
         self.timer_period = 0.1           # 10Hz, this is our "step" time
         self.last_action_time = self.get_clock().now()
+        
+        # --- NEW: Our "Scorekeeper" ---
+        self.episode_reward = 0.0
 
         # A flag to ensure we have received the first state
         self.state_received = False
@@ -151,6 +154,10 @@ class HriEnv(Node, gym.Env):
         The agent provides an 'action', and we return the 'next_state', 'reward', etc.
         """
         self.current_step += 1
+
+        # --- NEW: Log progress every 10 steps ---
+        if self.current_step % 10 == 0:
+            self.get_logger().info(f"--- Step {self.current_step} ---")
         
         # 1. Take the Action
         # Scale the normalized action (-1 to 1) to the real velocity
@@ -160,43 +167,38 @@ class HriEnv(Node, gym.Env):
 
         # 2. Wait for the action to take effect
         # We spin the node to receive the new joint_state
-        # This is a simple way to "wait" for the next state
-        # We spin for the timer_period, ensuring callbacks are processed.
         end_time = self.last_action_time.nanoseconds + self.timer_period * 1e9
         while self.get_clock().now().nanoseconds < end_time:
             rclpy.spin_once(self, timeout_sec=0.01) # Spin briefly
-            # A small sleep to prevent busy-waiting
             time.sleep(0.001) 
         
         # 3. Get the Next State
-        # The joint_state_callback has updated self.last_joint_state
         if not self.state_received:
             self.get_logger().error("Failed to get new joint state in step!")
-            # Return a default state and 0 reward, and mark as done
             next_state = np.zeros(self.observation_space.shape, dtype=np.float32)
             return next_state, 0.0, True, False, {"error": "Failed to get state"}
 
         next_state = np.array(self.last_joint_state, dtype=np.float32)
 
         # 4. Calculate the Reward
-        # This is Iteration 1: "Smoothness"
-        # We penalize high velocities (jerky movements)
-        # The agent will learn to stay still to maximize reward (minimize penalty)
         reward = -np.sum(np.square(scaled_velocities))
+        
+        # --- NEW: Update the score ---
+        self.episode_reward += reward
 
         # 5. Check if Done
-        # For Iteration 1, the task never ends.
-        # TODO: Add a "done" condition (e.g., robot falls over)
         terminated = False
         
         # Check for truncation (time limit)
         truncated = False 
-        if self.current_step > 1000: # Limit episode to 1000 steps (100 sec)
+        
+        # --- MODIFIED: Shortened episode and added printout ---
+        if self.current_step > 150: # Shortened episode for faster testing
             truncated = True
             self.get_logger().info("Episode truncated due to time limit.")
-
-        # 6. Return the standard Gym 5-tuple
-        # (observation, reward, terminated, truncated, info)
+            # --- THIS IS THE NEW PRINT ---
+            self.get_logger().info(f"--- EPISODE FINISHED --- Total Reward: {self.episode_reward:.2f} ---")
+        
         return next_state, float(reward), terminated, truncated, {}
 
     def reset(self, seed=None, options=None):
@@ -205,19 +207,16 @@ class HriEnv(Node, gym.Env):
         Resets the environment.
         """
         if seed is not None:
-            # Handle the seed if Gymnasium requires it
-            # This is simplified; a full implementation would use the seed
             super().reset(seed=seed)
             
         self.current_step = 0
         
-        # TODO: Call the /reset_simulation service to put the robot back
-        # For now, we just wait for the first joint state
+        # --- NEW: Reset the score ---
+        self.episode_reward = 0.0
         
         self.get_logger().info("--- Episode Reset ---")
         
         # Wait until we get a valid state
-        # We spin the node to process the subscription
         while not self.state_received:
             self.get_logger().warn("Waiting for first joint state in reset...")
             rclpy.spin_once(self, timeout_sec=0.1)
@@ -225,7 +224,6 @@ class HriEnv(Node, gym.Env):
             
         initial_state = np.array(self.last_joint_state, dtype=np.float32)
         
-        # Return the standard 2-tuple (observation, info)
         return initial_state, {}
 
     def close(self):
@@ -234,6 +232,3 @@ class HriEnv(Node, gym.Env):
         """
         self.get_logger().info("Closing HRI Environment.")
         self.destroy_node()
-
-# Note: We don't have a main() function here because
-# this file is a "library" to be imported by train.py
