@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur5e">
+
+  <xacro:include filename="ur_macro.xacro"/>
+
+  <xacro:arg name="robot_name" default="ur5e"/>
+  <xacro:arg name="ur_type" default="ur5e"/>
+  <xacro:arg name="sim_gazebo" default="true"/>
+  <xacro:arg name="simulation_controllers" default=""/>
+  
+  <xacro:arg name="safety_on" default="false"/> 
+  <xacro:arg name="safety_pause_margin" default="0.15"/> 
+  <xacro:arg name="safety_k_position" default="20"/>
+  
+  <xacro:arg name="ros2_control" default="true"/>
+
+  <xacro:arg name="prefix" default=""/>
+  <xacro:arg name="parent_link" default="base_link"/>
+  <xacro:arg name="sim_ignition" default="false"/>
+  <xacro:arg name="ros2_control_plugin" default="gazebo_ros2_control/GazeboSystem"/>
+  <xacro:arg name="use_fake_hardware" default="false"/>
+  <xacro:arg name="fake_sensor_commands" default="false"/>
+  <xacro:arg name="initial_positions" default=""/>
+  
+  <xacro:arg name="joint_limits_parameters_file" default="joint_limits.yaml"/>
+  <xacro:arg name="kinematics_parameters_file" default="default_kinematics.yaml"/>
+  <xacro:arg name="physical_parameters_file" default="physical_parameters.yaml"/>
+  <xacro:arg name="visual_parameters_file" default="visual_parameters.yaml"/>
+  <xacro:arg name="initial_positions_file" default="initial_positions.yaml"/>
+  
+  <xacro:property name="safety_limits" value="$(arg safety_on)"/>
+  <xacro:property name="safety_pos_margin" value="$(arg safety_pause_margin)" />
+
+  <xacro:ur_robot_macro
+    robot_name="$(arg robot_name)"
+    prefix="$(arg prefix)"
+    parent_link="$(arg parent_link)"
+    sim_gazebo="$(arg sim_gazebo)"
+    sim_ignition="$(arg sim_ignition)"
+    simulation_controllers="$(arg simulation_controllers)"
+    ros2_control="$(arg ros2_control)"
+    ros2_control_plugin="$(arg ros2_control_plugin)"
+    joint_limits_parameters_file="$(arg joint_limits_parameters_file)"
+    kinematics_parameters_file="$(arg kinematics_parameters_file)"
+    physical_parameters_file="$(arg physical_parameters_file)"
+    visual_parameters_file="$(arg visual_parameters_file)"
+    
+    safety_limits="${safety_limits}"  
+    safety_pos_margin="${safety_pos_margin}"
+    safety_k_position="$(arg safety_k_position)"
+    
+    ur_type="$(arg ur_type)"
+    use_fake_hardware="$(arg use_fake_hardware)"
+    fake_sensor_commands="$(arg fake_sensor_commands)"
+    initial_positions_file="$(arg initial_positions_file)"
+    initial_positions="$(arg initial_positions)"
+    >
+  </xacro:ur_robot_macro>
+</robot>

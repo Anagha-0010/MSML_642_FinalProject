@@ -1,0 +1,358 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="ur.ros2_control.xacro"/>
+
+  <xacro:macro name="ur_robot_macro"
+    params="
+      robot_name
+      prefix
+      parent_link
+      sim_gazebo
+      sim_ignition
+      simulation_controllers
+      ros2_control
+      ros2_control_plugin
+      joint_limits_parameters_file
+      kinematics_parameters_file
+      physical_parameters_file
+      visual_parameters_file
+      safety_limits
+      safety_pos_margin
+      safety_k_position
+      ur_type
+      use_fake_hardware
+      fake_sensor_commands
+      initial_positions_file
+      initial_positions
+      "
+    >
+
+    <xacro:property name="ur_type" value="${ur_type}"/>
+    <xacro:property name="robot_name" value="${robot_name}"/>
+
+    <xacro:property name="prefix" value="${prefix}"/>
+
+    <xacro:property name="safety_limits" value="${safety_limits}"/>
+
+    <xacro:property name="safety_pos_margin" value="${safety_pos_margin}"/>
+
+    <xacro:property name="safety_k_position" value="${safety_k_position}"/>
+
+    <xacro:property name="joint_limits_parameters" value="${load_yaml(joint_limits_parameters_file)}"/>
+    <xacro:property name="kinematics_parameters" value="${load_yaml(kinematics_parameters_file)}"/>
+    <xacro:property name="physical_parameters" value="${load_yaml(physical_parameters_file)}"/>
+    <xacro:property name="visual_parameters" value="${load_yaml(visual_parameters_file)}"/>
+
+    <xacro:property name="shoulder_pan_lower_limit" value="${joint_limits_parameters['shoulder_pan_joint']['min_position']}"/>
+    <xacro:property name="shoulder_pan_upper_limit" value="${joint_limits_parameters['shoulder_pan_joint']['max_position']}"/>
+    <xacro:property name="shoulder_pan_velocity_limit" value="${joint_limits_parameters['shoulder_pan_joint']['max_velocity']}"/>
+    <xacro:property name="shoulder_pan_effort_limit" value="${joint_limits_parameters['shoulder_pan_joint']['max_effort']}"/>
+    <xacro:property name="shoulder_lift_lower_limit" value="${joint_limits_parameters['shoulder_lift_joint']['min_position']}"/>
+    <xacro:property name="shoulder_lift_upper_limit" value="${joint_limits_parameters['shoulder_lift_joint']['max_position']}"/>
+    <xacro:property name="shoulder_lift_velocity_limit" value="${joint_limits_parameters['shoulder_lift_joint']['max_velocity']}"/>
+    <xacro:property name="shoulder_lift_effort_limit" value="${joint_limits_parameters['shoulder_lift_joint']['max_effort']}"/>
+    <xacro:property name="elbow_joint_lower_limit" value="${joint_limits_parameters['elbow_joint']['min_position']}"/>
+    <xacro:property name="elbow_joint_upper_limit" value="${joint_limits_parameters['elbow_joint']['max_position']}"/>
+    <xacro:property name="elbow_joint_velocity_limit" value="${joint_limits_parameters['elbow_joint']['max_velocity']}"/>
+    <xacro:property name="elbow_joint_effort_limit" value="${joint_limits_parameters['elbow_joint']['max_effort']}"/>
+    <xacro:property name="wrist_1_lower_limit" value="${joint_limits_parameters['wrist_1_joint']['min_position']}"/>
+    <xacro:property name="wrist_1_upper_limit" value="${joint_limits_parameters['wrist_1_joint']['max_position']}"/>
+    <xacro:property name="wrist_1_velocity_limit" value="${joint_limits_parameters['wrist_1_joint']['max_velocity']}"/>
+    <xacro:property name="wrist_1_effort_limit" value="${joint_limits_parameters['wrist_1_joint']['max_effort']}"/>
+    <xacro:property name="wrist_2_lower_limit" value="${joint_limits_parameters['wrist_2_joint']['min_position']}"/>
+    <xacro:property name="wrist_2_upper_limit" value="${joint_limits_parameters['wrist_2_joint']['max_position']}"/>
+    <xacro:property name="wrist_2_velocity_limit" value="${joint_limits_parameters['wrist_2_joint']['max_velocity']}"/>
+    <xacro:property name="wrist_2_effort_limit" value="${joint_limits_parameters['wrist_2_joint']['max_effort']}"/>
+    <xacro:property name="wrist_3_lower_limit" value="${joint_limits_parameters['wrist_3_joint']['min_position']}"/>
+    <xacro:property name="wrist_3_upper_limit" value="${joint_limits_parameters['wrist_3_joint']['max_position']}"/>
+    <xacro:property name="wrist_3_velocity_limit" value="${joint_limits_parameters['wrist_3_joint']['max_velocity']}"/>
+    <xacro:property name="wrist_3_effort_limit" value="${joint_limits_parameters['wrist_3_joint']['max_effort']}"/>
+
+  
+
+    <xacro:property name="kinematics" value="${kinematics_parameters}"/>
+
+    <xacro:property name="shoulder_pan_calibrated_offset" value="${kinematics['shoulder_pan_joint']['calibrated_offset']}"/>
+    <xacro:property name="shoulder_pan_kinematics_alpha" value="${kinematics['shoulder_pan_joint']['kinematics_alpha']}"/>
+    <xacro:property name="shoulder_pan_kinematics_d" value="${kinematics['shoulder_pan_joint']['kinematics_d']}"/>
+    <xacro:property name="shoulder_pan_kinematics_a" value="${kinematics['shoulder_pan_joint']['kinematics_a']}"/>
+    <xacro:property name="shoulder_pan_kinematics_q_home_offset" value="${kinematics['shoulder_pan_joint']['kinematics_q_home_offset']}"/>
+
+    <xacro:property name="shoulder_lift_calibrated_offset" value="${kinematics['shoulder_lift_joint']['calibrated_offset']}"/>
+    <xacro:property name="shoulder_lift_kinematics_alpha" value="${kinematics['shoulder_lift_joint']['kinematics_alpha']}"/>
+    <xacro:property name="shoulder_lift_kinematics_d" value="${kinematics['shoulder_lift_joint']['kinematics_d']}"/>
+    <xacro:property name="shoulder_lift_kinematics_a" value="${kinematics['shoulder_lift_joint']['kinematics_a']}"/>
+    <xacro:property name="shoulder_lift_kinematics_q_home_offset" value="${kinematics['shoulder_lift_joint']['kinematics_q_home_offset']}"/>
+
+    <xacro:property name="elbow_joint_calibrated_offset" value="${kinematics['elbow_joint']['calibrated_offset']}"/>
+    <xacro:property name="elbow_joint_kinematics_alpha" value="${kinematics['elbow_joint']['kinematics_alpha']}"/>
+    <xacro:property name="elbow_joint_kinematics_d" value="${kinematics['elbow_joint']['kinematics_d']}"/>
+    <xacro:property name="elbow_joint_kinematics_a" value="${kinematics['elbow_joint']['kinematics_a']}"/>
+    <xacro:property name="elbow_joint_kinematics_q_home_offset" value="${kinematics['elbow_joint']['kinematics_q_home_offset']}"/>
+
+    <xacro:property name="wrist_1_calibrated_offset" value="${kinematics['wrist_1_joint']['calibrated_offset']}"/>
+    <xacro:property name="wrist_1_kinematics_alpha" value="${kinematics['wrist_1_joint']['kinematics_alpha']}"/>
+    <xacro:property name="wrist_1_kinematics_d" value="${kinematics['wrist_1_joint']['kinematics_d']}"/>
+    <xacro:property name="wrist_1_kinematics_a" value="${kinematics['wrist_1_joint']['kinematics_a']}"/>
+    <xacro:property name="wrist_1_kinematics_q_home_offset" value="${kinematics['wrist_1_joint']['kinematics_q_home_offset']}"/>
+
+    <xacro:property name="wrist_2_calibrated_offset" value="${kinematics['wrist_2_joint']['calibrated_offset']}"/>
+    <xacro:property name="wrist_2_kinematics_alpha" value="${kinematics['wrist_2_joint']['kinematics_alpha']}"/>
+    <xacro:property name="wrist_2_kinematics_d" value="${kinematics['wrist_2_joint']['kinematics_d']}"/>
+    <xacro:property name="wrist_2_kinematics_a" value="${kinematics['wrist_2_joint']['kinematics_a']}"/>
+    <xacro:property name="wrist_2_kinematics_q_home_offset" value="${kinematics['wrist_2_joint']['kinematics_q_home_offset']}"/>
+
+    <xacro:property name_collision="wrist_3_calibrated_offset" value="${kinematics['wrist_3_joint']['calibrated_offset']}"/>
+    <xacro:property name="wrist_3_kinematics_alpha" value="${kinematics['wrist_3_joint']['kinematics_alpha']}"/>
+    <xacro:property name="wrist_3_kinematics_d" value="${kinematics['wrist_3_joint']['kinematics_d']}"/>
+    <xacro:property name="wrist_3_kinematics_a" value="${kinematics['wrist_3_joint']['kinematics_a']}"/>
+    <xacro:property name="wrist_3_kinematics_q_home_offset" value="${kinematics['wrist_3_joint']['kinematics_q_home_offset']}"/>
+
+    <xacro:property name="base_link_mass" value="${physical_parameters['base_link_mass']}"/>
+    <xacro:property name="base_link_inertia_x" value="${physical_parameters['base_link_inertia_x']}"/>
+    <xacro:property name="base_link_inertia_y" value="${physical_parameters['base_link_inertia_y']}"/>
+    <xacro:property name="base_link_inertia_z" value="${physical_parameters['base_link_inertia_z']}"/>
+    <xacro:property name="shoulder_link_mass" value="${physical_parameters['shoulder_link_mass']}"/>
+    <xacro:property name="shoulder_link_inertia_x" value="${physical_parameters['shoulder_link_inertia_x']}"/>
+    <xacro:property name="shoulder_link_inertia_y" value="${physical_parameters['shoulder_link_inertia_y']}"/>
+    <xacro:property name="shoulder_link_inertia_z" value="${physical_parameters['shoulder_link_inertia_z']}"/>
+    <xacro:property name="upper_arm_link_mass" value="${physical_parameters['upper_arm_link_mass']}"/>
+    <xacro:property name="upper_arm_link_inertia_x" value="${physical_parameters['upper_arm_link_inertia_x']}"/>
+    <xacro:property name="upper_arm_link_inertia_y" value="${physical_parameters['upper_arm_link_inertia_y']}"/>
+    <xacro:property name="upper_arm_link_inertia_z" value="${physical_parameters['upper_arm_link_inertia_z']}"/>
+    <xacro:property name="forearm_link_mass" value="${physical_parameters['forearm_link_mass']}"/>
+    <xacro:property name="forearm_link_inertia_x" value="${physical_parameters['forearm_link_inertia_x']}"/>
+    <xacro:property name="forearm_link_inertia_y" value="${physical_parameters['forearm_link_inertia_y']}"/>
+    <xacro:property name="forearm_link_inertia_z" value="${physical_parameters['forearm_link_inertia_z']}"/>
+    <xacro:property name="wrist_1_link_mass" value="${physical_parameters['wrist_1_link_mass']}"/>
+    <xacro:property name="wrist_1_link_inertia_x" value="${physical_parameters['wrist_1_link_inertia_x']}"/>
+    <xacro:property name="wrist_1_link_inertia_y" value="${physical_parameters['wrist_1_link_inertia_y']}"/>
+    <xacro:property name="wrist_1_link_inertia_z" value="${physical_parameters['wrist_1_link_inertia_z']}"/>
+    <xacro:property name="wrist_2_link_mass" value="${physical_parameters['wrist_2_link_mass']}"/>
+    <xacro:property name="wrist_2_link_inertia_x" value="${physical_parameters['wrist_2_link_inertia_x']}"/>
+    <xacro:property name="wrist_2_link_inertia_y" value="${physical_parameters['wrist_2_link_inertia_y']}"/>
+    <xacro:property name="wrist_2_link_inertia_z" value="${physical_parameters['wrist_2_link_inertia_z']}"/>
+    <xacro:property name="wrist_3_link_mass" value="${physical_parameters['wrist_3_link_mass']}"/>
+    <xacro:property name="wrist_3_link_inertia_x" value="${physical_parameters['wrist_3_link_inertia_x']}"/>
+    <xacro:property name.="wrist_3_link_inertia_y" value="${physical_parameters['wrist_3_link_inertia_y']}"/>
+    <xacro:property name="wrist_3_link_inertia_z" value="${physical_parameters['wrist_3_link_inertia_z']}"/>
+
+    <xacro:property name="base_link_visual" value="${visual_parameters['base_link_visual']}"/>
+    <xacro:property name="shoulder_link_visual" value="${visual_parameters['shoulder_link_visual']}"/>
+    <xacro:property name="upper_arm_link_visual" value="${visual_parameters['upper_arm_link_visual']}"/>
+    <xacro:property name="forearm_link_visual" value="${visual_parameters['forearm_link_visual']}"/>
+    <xacro:property name="wrist_1_link_visual" value="${visual_parameters['wrist_1_link_visual']}"/>
+    <xacro:property name="wrist_2_link_visual" value="${visual_parameters['wrist_2_link_visual']}"/>
+    <xacro:property name="wrist_3_link_visual" value="${visual_parameters['wrist_3_link_visual']}"/>
+
+    <link name="${prefix}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="${base_link_visual}"/>
+        </geometry>
+        <material name="light_grey">
+          <color rgba="0.7 0.7 0.7 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="${base_link_visual}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${base_link_mass}"/>
+        <inertia ixx="${base_link_inertia_x}" ixy="0.0" ixz="0.0" iyy="${base_link_inertia_y}" iyz="0.0" izz="${base_link_inertia_z}"/>
+      </inertial>
+    </link>
+
+    <link name="${prefix}shoulder_link">
+      <visual>
+        <geometry>
+          <mesh filename="${shoulder_link_visual}"/>
+        </geometry>
+        <material name="light_grey"/>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="${shoulder_link_visual}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${shoulder_link_mass}"/>
+        <inertia ixx="${shoulder_link_inertia_x}" ixy="0.0" ixz="0.0" iyy="${shoulder_link_inertia_y}" iyz="0.0" izz="${shoulder_link_inertia_z}"/>
+      </inertial>
+    </link>
+
+    <link name="${prefix}upper_arm_link">
+      <visual>
+        <geometry>
+          <mesh filename="${upper_arm_link_visual}"/>
+        </geometry>
+        <material name="light_grey"/>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="${upper_arm_link_visual}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${upper_arm_link_mass}"/>
+        <inertia ixx="${upper_arm_link_inertia_x}" ixy="0.0" ixz="0.0" iyy="${upper_arm_link_inertia_y}" iyz="0.0" izz="${upper_arm_link_inertia_z}"/>
+      </inertial>
+    </link>
+
+    <link name="${prefix}forearm_link">
+      <visual>
+        <geometry>
+          <mesh filename="${forearm_link_visual}"/>
+        </geometry>
+        <material name="light_grey"/>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="${forearm_link_visual}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${forearm_link_mass}"/>
+        <inertia ixx="${forearm_link_inertia_x}" ixy="0.0" ixz="0.0" iyy="${forearm_link_inertia_y}" iyz="0.0" izz="${forearm_link_inertia_z}"/>
+      </inertial>
+    </link>
+
+    <link name="${prefix}wrist_1_link">
+      <visual>
+        <geometry>
+          <mesh filename="${wrist_1_link_visual}"/>
+        </geometry>
+        <material name="light_grey"/>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="${wrist_1_link_visual}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${wrist_1_link_mass}"/>
+        <inertia ixx="${wrist_1_link_inertia_x}" ixy="0.0" ixz="0.0" iyy="${wrist_1_link_inertia_y}" iyz="0.0" izz="${wrist_1_link_inertia_z}"/>
+      </inertial>
+    </link>
+
+    <link name="${prefix}wrist_2_link">
+      <visual>
+        <geometry>
+          <mesh filename="${wrist_2_link_visual}"/>
+        </geometry>
+        <material name="light_grey"/>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="${wrist_2_link_visual}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${wrist_2_link_mass}"/>
+        <inertia ixx="${wrist_2_link_inertia_x}" ixy="0.0" ixz="0.0" iyy="${wrist_2_link_inertia_y}" iyz="0.0" izz="${wrist_2_link_inertia_z}"/>
+      </inertial>
+    </link>
+
+    <link name="${prefix}wrist_3_link">
+      <visual>
+        <geometry>
+          <mesh filename="${wrist_3_link_visual}"/>
+        </geometry>
+        <material name="light_grey"/>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="${wrist_3_link_visual}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${wrist_3_link_mass}"/>
+        <inertia ixx="${wrist_3_link_inertia_x}" ixy="0.0" ixz="0.0" iyy="${wrist_3_link_inertia_y}" iyz="0.0" izz="${wrist_3_link_inertia_z}"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}shoulder_pan_joint" type="revolute">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}shoulder_link"/>
+      <origin xyz="0.0 0.0 ${shoulder_pan_kinematics_d}" rpy="${shoulder_pan_calibrated_offset} ${-pi/2} 0.0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${shoulder_pan_lower_limit}" upper="${shoulder_pan_upper_limit}" effort="${shoulder_pan_effort_limit}" velocity="${shoulder_pan_velocity_limit}"/>
+      <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <joint name="${prefix}shoulder_lift_joint" type="revolute">
+      <parent link="${prefix}shoulder_link"/>
+      <child link="${prefix}upper_arm_link"/>
+      <origin xyz="0.0 ${shoulder_lift_kinematics_d} 0.0" rpy="${shoulder_lift_calibrated_offset} 0.0 0.0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${shoulder_lift_lower_limit}" upper="${shoulder_lift_upper_limit}" effort="${shoulder_lift_effort_limit}" velocity="${shoulder_lift_velocity_limit}"/>
+      <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <joint name="${prefix}elbow_joint" type="revolute">
+      <parent link="${prefix}upper_arm_link"/>
+      <child link="${prefix}forearm_link"/>
+      <origin xyz="0.0 ${elbow_joint_kinematics_d} ${elbow_joint_kinematics_a}" rpy="${elbow_joint_calibrated_offset} 0.0 0.0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${elbow_joint_lower_limit}" upper="${elbow_joint_upper_limit}" effort="${elbow_joint_effort_limit}" velocity="${elbow_joint_velocity_limit}"/>
+      <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <joint name="${prefix}wrist_1_joint" type="revolute">
+      <parent link="${prefix}forearm_link"/>
+      <child link="${prefix}wrist_1_link"/>
+      <origin xyz="0.0 ${wrist_1_kinematics_d} ${wrist_1_kinematics_a}" rpy="${wrist_1_calibrated_offset} 0.0 0.0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${wrist_1_lower_limit}" upper="${wrist_1_upper_limit}" effort="${wrist_1_effort_limit}" velocity="${wrist_1_velocity_limit}"/>
+      <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <joint name="${prefix}wrist_2_joint" type="revolute">
+      <parent link="${prefix}wrist_1_link"/>
+      <child link="${prefix}wrist_2_link"/>
+      <origin xyz="0.0 0.0 ${wrist_2_kinematics_d}" rpy="${wrist_2_calibrated_offset} ${pi/2} 0.0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${wrist_2_lower_limit}" upper="${wrist_2_upper_limit}" effort="${wrist_2_effort_limit}" velocity="${wrist_2_velocity_limit}"/>
+      <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <joint name="${prefix}wrist_3_joint" type="revolute">
+      <parent link="${prefix}wrist_2_link"/>
+      <child link="${prefix}wrist_3_link"/>
+      <origin xyz="0.0 0.0 ${wrist_3_kinematics_d}" rpy="${wrist_3_kinematics_q_home_offset} 0.0 0.0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${wrist_3_lower_limit}" upper="${wrist_3_upper_limit}" effort="${wrist_3_effort_limit}" velocity="${wrist_3_velocity_limit}"/>
+      <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <link name="${prefix}tool0"/>
+    <joint name="${prefix}wrist_3_link-tool0_fixed_joint" type="fixed">
+      <parent link="${prefix}wrist_3_link"/>
+      <child link="${prefix}tool0"/>
+      <origin xyz="0 0 0" rpy="0 ${-pi/2} 0"/>
+    </joint>
+
+    <xacro:if value="${ros2_control}">
+      <xacro:ur_ros2_control
+        robot_name="${robot_name}"
+        prefix="${prefix}"
+        sim_gazebo="${sim_gazebo}"
+        sim_ignition="${sim_ignition}"
+        simulation_controllers="${simulation_controllers}"
+        ros2_control_plugin="${ros2_control_plugin}"
+        use_fake_hardware="${use_fake_hardware}"
+        fake_sensor_commands="${fake_sensor_commands}"
+        initial_positions_file="${initial_positions_file}"
+        initial_positions="${initial_positions}"
+        />
+    </xacro:if>
+
+    <xacro:if value="${sim_gazebo}">
+      </xacro:if>
+
+    <xacro:if value="${sim_ignition}">
+      </xacro:if>
+  </xacro:macro>
+</robot>

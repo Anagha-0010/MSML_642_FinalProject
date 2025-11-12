@@ -1,0 +1,39 @@
+# Configuration for the ros2_control controller_manager
+controller_manager:
+  ros__parameters:
+    update_rate: 100 # Hz
+
+    # This is the main velocity controller for the arm
+    # It accepts a list of velocities for all 6 joints
+    joint_group_velocity_controller:
+      type: velocity_controllers/JointGroupVelocityController
+
+    # This controller just publishes the state of the joints
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+# Parameters for our arm controller
+joint_group_velocity_controller:
+  ros__parameters:
+    # The list of joints this controller will manage
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    
+    # It takes 'velocity' commands
+    command_interfaces:
+      - velocity
+
+    # It uses 'velocity' for its state
+    state_interfaces:
+      - velocity
+
+# Parameters for the joint state broadcaster
+joint_state_broadcaster:
+  ros__parameters:
+    publish_rate: 100.0
+```
