@@ -1,5 +1,5 @@
 # This file is hri_env.py
-# It replaces the old hri_node.py
+# FINAL VERSION with RL Logic
 # This class is BOTH a ROS2 Node and a Gymnasium Environment
 
 import rclpy
@@ -11,6 +11,7 @@ import numpy as np
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
+from visualization_msgs.msg import Marker  # NEW: To see the target
 import time
 
 # The joint names for the UR5e
@@ -24,7 +25,6 @@ UR5E_JOINT_NAMES = [
 ]
 
 # The maximum velocity (rad/s) we'll let the agent command.
-# This scales the agent's action (which is from -1 to 1).
 MAX_JOINT_VELOCITY = 0.5 
 
 class HriEnv(Node, gym.Env):
@@ -33,23 +33,21 @@ class HriEnv(Node, gym.Env):
     This environment is for the UR5e robot in Gazebo.
     """
     
-    # Gymnasium metadata
     metadata = {'render_modes': ['human']}
 
     def __init__(self):
-        # Initialize the ROS2 Node first
-        # We use a unique name to avoid conflicts if the 'train' script also inits rclpy
         super().__init__('hri_env_node') 
-        
-        # Initialize the Gymnasium Environment
         gym.Env.__init__(self)
 
         self.get_logger().info("HRI Environment is starting...")
 
+        # --- NEW: Target Hand Position ---
+        self.last_target_position = np.array([0.5, 0.3, 0.5], dtype=np.float32) # Default start
+
         # --- Define Gym Spaces ---
-        # Observation Space: 6 joint positions
+        # Observation Space: 6 joint positions + 3 target (x, y, z)
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32  # SHAPE IS NOW 9
         )
         
         # Action Space: 6 joint velocities (normalized between -1 and 1)
@@ -64,30 +62,29 @@ class HriEnv(Node, gym.Env):
             self.joint_state_callback,
             10)
         
+        # NEW: Target Position Subscriber (from hand_simulator.py)
+        self.target_sub = self.create_subscription(
+            Marker,
+            '/target_hand_marker',
+            self.target_callback,
+            10)
+        
         self.trajectory_pub = self.create_publisher(
             JointTrajectory,
             '/joint_trajectory_controller/joint_trajectory',
             10)
 
         # --- State Variables ---
-        self.last_joint_state = None      # Stores the last received joint positions
+        self.last_joint_state = None
         self.current_step = 0
-        self.timer_period = 0.1           # 10Hz, this is our "step" time
+        self.timer_period = 0.1
         self.last_action_time = self.get_clock().now()
-        
-        # --- NEW: Our "Scorekeeper" ---
         self.episode_reward = 0.0
-
-        # A flag to ensure we have received the first state
         self.state_received = False
 
         self.get_logger().info("HRI Environment initialized.")
 
     def joint_state_callback(self, msg):
-        """
-        This function is called every time a new /joint_states message is received.
-        It re-orders the received joint states to match our UR5E_JOINT_NAMES list.
-        """
         if not self.state_received:
             self.state_received = True
             self.get_logger().info("First joint state received.")
@@ -102,7 +99,6 @@ class HriEnv(Node, gym.Env):
             if name in msg_dict:
                 ordered_positions.append(msg_dict[name])
             else:
-                # Use the last known value if a joint is missing
                 try:
                     idx = UR5E_JOINT_NAMES.index(name)
                     ordered_positions.append(self.last_joint_state[idx])
@@ -111,28 +107,23 @@ class HriEnv(Node, gym.Env):
         
         self.last_joint_state = ordered_positions
 
-        # Log the position of the first joint, throttled to 1 sec
-        self.get_logger().info(
-            f"Pan joint is at: {self.last_joint_state[0]:.4f} rad",
-            throttle_duration_sec=1.0
-        )
+    # NEW: Callback to store the target's position
+    def target_callback(self, msg: Marker):
+        self.last_target_position = np.array([
+            msg.pose.position.x, 
+            msg.pose.position.y, 
+            msg.pose.position.z
+        ], dtype=np.float32)
 
     def _publish_action(self, action_velocities):
-        """
-        Converts the agent's velocity action into a
-        JointTrajectoryPoint and publishes it.
-        """
         if self.last_joint_state is None:
             self.get_logger().warn("Skipping action, no joint state received yet.")
             return
 
         traj_msg = JointTrajectory()
         traj_msg.joint_names = UR5E_JOINT_NAMES
-
         point = JointTrajectoryPoint()
         
-        # Calculate target positions based on velocities
-        # target_pos = current_pos + (velocity * time_step)
         target_positions = [
             current + (velocity * self.timer_period) 
             for current, velocity in zip(self.last_joint_state, action_velocities)
@@ -140,7 +131,6 @@ class HriEnv(Node, gym.Env):
         
         point.positions = target_positions
         
-        # Set the time for this point to be timer_period seconds from now
         time_to_reach_ns = int(self.timer_period * 1e9)
         point.time_from_start = Duration(sec=time_to_reach_ns // 1000000000,
                                          nanosec=time_to_reach_ns % 1000000000)
@@ -149,27 +139,17 @@ class HriEnv(Node, gym.Env):
         self.trajectory_pub.publish(traj_msg)
 
     def step(self, action):
-        """
-        This is the main RL loop step.
-        The agent provides an 'action', and we return the 'next_state', 'reward', etc.
-        """
         self.current_step += 1
-
-        # --- NEW: Log progress every 10 steps ---
-        if self.current_step % 10 == 0:
-            self.get_logger().info(f"--- Step {self.current_step} ---")
         
         # 1. Take the Action
-        # Scale the normalized action (-1 to 1) to the real velocity
         scaled_velocities = [a * MAX_JOINT_VELOCITY for a in action]
         self._publish_action(scaled_velocities)
         self.last_action_time = self.get_clock().now()
 
         # 2. Wait for the action to take effect
-        # We spin the node to receive the new joint_state
         end_time = self.last_action_time.nanoseconds + self.timer_period * 1e9
         while self.get_clock().now().nanoseconds < end_time:
-            rclpy.spin_once(self, timeout_sec=0.01) # Spin briefly
+            rclpy.spin_once(self, timeout_sec=0.01)
             time.sleep(0.001) 
         
         # 3. Get the Next State
@@ -178,57 +158,66 @@ class HriEnv(Node, gym.Env):
             next_state = np.zeros(self.observation_space.shape, dtype=np.float32)
             return next_state, 0.0, True, False, {"error": "Failed to get state"}
 
-        next_state = np.array(self.last_joint_state, dtype=np.float32)
+        # NEW: State is 6 robot joints + 3 target coordinates
+        robot_state = np.array(self.last_joint_state, dtype=np.float32)
+        target_state = self.last_target_position
+        next_state = np.concatenate([robot_state, target_state])
 
         # 4. Calculate the Reward
-        reward = -np.sum(np.square(scaled_velocities))
         
-        # --- NEW: Update the score ---
+        # NOTE: This is a simple proxy for EE position.
+        # A full Forward Kinematics (FK) lookup is the true solution.
+        robot_ee_proxy_pos = np.array([
+            self.last_joint_state[3], # wrist_1_joint
+            self.last_joint_state[4], # wrist_2_joint
+            self.last_joint_state[5]  # wrist_3_joint
+        ])
+
+        # a) Distance Reward (The GOAL)
+        distance_to_target = np.linalg.norm(robot_ee_proxy_pos - target_state)
+        # We want to minimize distance, so reward is the negative distance.
+        distance_reward = -distance_to_target
+        
+        # b) Velocity Penalty (The SMOOTHNESS)
+        # Penalize large movements to keep it smooth
+        velocity_penalty = -0.01 * np.sum(np.square(scaled_velocities))
+
+        # c) Final Reward
+        reward = distance_reward + velocity_penalty
+        
         self.episode_reward += reward
 
         # 5. Check if Done
         terminated = False
-        
-        # Check for truncation (time limit)
         truncated = False 
         
-        # --- MODIFIED: Shortened episode and added printout ---
-        if self.current_step > 150: # Shortened episode for faster testing
+        if self.current_step > 150:
             truncated = True
-            self.get_logger().info("Episode truncated due to time limit.")
-            # --- THIS IS THE NEW PRINT ---
             self.get_logger().info(f"--- EPISODE FINISHED --- Total Reward: {self.episode_reward:.2f} ---")
         
         return next_state, float(reward), terminated, truncated, {}
 
     def reset(self, seed=None, options=None):
-        """
-        Called at the beginning of each episode.
-        Resets the environment.
-        """
         if seed is not None:
             super().reset(seed=seed)
             
         self.current_step = 0
-        
-        # --- NEW: Reset the score ---
         self.episode_reward = 0.0
         
         self.get_logger().info("--- Episode Reset ---")
         
-        # Wait until we get a valid state
         while not self.state_received:
             self.get_logger().warn("Waiting for first joint state in reset...")
             rclpy.spin_once(self, timeout_sec=0.1)
             time.sleep(0.01)
             
-        initial_state = np.array(self.last_joint_state, dtype=np.float32)
+        # NEW: State is 6 robot joints + 3 target coordinates
+        robot_state = np.array(self.last_joint_state, dtype=np.float32)
+        target_state = self.last_target_position
+        initial_state = np.concatenate([robot_state, target_state])
         
         return initial_state, {}
 
     def close(self):
-        """
-        Cleans up the node when the environment is closed.
-        """
         self.get_logger().info("Closing HRI Environment.")
         self.destroy_node()

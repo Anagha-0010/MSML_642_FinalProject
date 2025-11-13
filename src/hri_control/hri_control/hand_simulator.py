@@ -1,15 +1,16 @@
 # This file is hand_simulator.py
-# FINAL VERSION
-# 1. Spawns a red sphere in Gazebo
+# FINAL VERSION - Corrected for ROS 2 Humble / Gazebo Classic Bridge
+# 1. Spawns a red sphere in Gazebo using /spawn_entity service
 # 2. Moves it in a circle (using /gazebo/set_model_state)
 # 3. Publishes an RViz "Marker" so we can see it
 
 import rclpy
 from rclpy.node import Node
 from gazebo_msgs.msg import ModelState
-from gazebo_msgs.srv import SpawnEntity
+# --- CHANGE 1: Use the classic gazebo_msgs service ---
+from gazebo_msgs.srv import SpawnEntity 
 from geometry_msgs.msg import Pose, Point, Quaternion
-from visualization_msgs.msg import Marker  # NEW IMPORT for RViz
+from visualization_msgs.msg import Marker
 import numpy as np
 
 # Blueprint (SDF) for a 5cm red sphere
@@ -38,11 +39,18 @@ class HandSimulatorNode(Node):
     def __init__(self):
         super().__init__('hand_simulator_node')
         
-        # --- Job 1: The Spawner ---
-        self.spawn_client = self.create_client(SpawnEntity, '/world/empty/create')
-        while not self.spawn_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Spawn service not available, waiting...')
+        # --- Job 1: The Spawner (Corrected with service list info) ---
+        # --- CHANGE 2: Use the correct service name '/spawn_entity' ---
+        self.spawn_client = self.create_client(SpawnEntity, '/spawn_entity')
         
+        while not self.spawn_client.wait_for_service(timeout_sec=5.0): # Increased timeout
+            self.get_logger().info('Spawn service (/spawn_entity) not available, waiting...')
+            if not rclpy.ok():
+                self.get_logger().error("RCLPY shut down, exiting.")
+                return
+        
+        self.get_logger().info("Spawn service IS available. Spawning model...")
+
         # --- Job 2: The Mover ---
         self.publisher_ = self.create_publisher(ModelState, '/gazebo/set_model_state', 10)
         
@@ -57,11 +65,14 @@ class HandSimulatorNode(Node):
     def spawn_hand_model(self):
         self.get_logger().info("Spawning 'target_hand' model...")
         req = SpawnEntity.Request()
+        
+        # --- CHANGE 3: Use the classic message structure ---
         req.name = "target_hand"
         req.xml = SPHERE_SDF
         req.initial_pose.position.x = 0.5
         req.initial_pose.position.y = 0.3
         req.initial_pose.position.z = 0.5
+        
         self.spawn_client.call_async(req).add_done_callback(self.spawn_callback)
 
     def spawn_callback(self, future):
