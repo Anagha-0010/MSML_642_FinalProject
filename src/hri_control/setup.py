@@ -29,6 +29,7 @@ setup(
         'console_scripts': [
             'train = hri_control.train:main',
             'hand_simulator = hri_control.hand_simulator:main',
+            'test = hri_control.test:main',
         ],
     },
 )
