@@ -18,7 +18,7 @@ SPHERE_SDF = """
 <?xml version="1.0"?>
 <sdf version="1.6">
   <model name="target_hand">
-    <static>true</static> 
+    <static>false</static> 
     <link name="base_link">
       <visual name="visual">
         <geometry><sphere><radius>0.05</radius></sphere></geometry>

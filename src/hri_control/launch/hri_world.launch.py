@@ -4,13 +4,12 @@ Launch file for headless Gazebo simulation with a UR robot.
 Fixes:
  - Missing robot_description for 'ros_gz_sim/create'
  - Updated to pass URDF properly to all nodes
- - ADDED: Environment variable to fix mesh path errors
+ - FIXED: Removed --headless-rendering to bypass local 3D driver crash (LLVM error).
 """
 
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-# MODIFIED: Added AppendEnvironmentVariable
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, AppendEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
@@ -43,17 +42,16 @@ def generate_launch_description():
     # -------------------------------
     # 2. Locate Required Packages
     # -------------------------------
-    pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
+    pkg_ros_gz_sim = get_package_share_directory('gazebo_ros')
     pkg_ur_description = get_package_share_directory('ur_description')
     pkg_ur_simulation_gz = get_package_share_directory('ur_simulation_gz')
 
     # --- NEW BLOCK TO FIX MESH PATH ---
     # Get the parent directory of the 'ur_description' package share
-    # This points Gazebo to the root where 'meshes' and 'urdf' are located
     ur_description_path = os.path.join(pkg_ur_description, '..')
     
     set_env_vars = AppendEnvironmentVariable(
-        'IGN_GAZEBO_RESOURCE_PATH',
+        'GAZEBO_MODEL_PATH',
         ur_description_path
     )
     # --- END OF NEW BLOCK ---
@@ -99,9 +97,11 @@ def generate_launch_description():
     # -------------------------------
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
+            os.path.join(pkg_ros_gz_sim, 'launch', 'gazebo.launch.py')
         ),
-        launch_arguments={'gz_args': '-r -s --headless-rendering'}.items(),
+        # --- CRITICAL FIX: Removed '--headless-rendering' to prevent 3D driver crash (LLVM) ---
+        # This forces Gazebo to run in server-only mode, which is stable.
+        launch_arguments={'headless': 'false', 'pause': 'false'}.items(),
     )
 
     # -------------------------------
@@ -131,13 +131,10 @@ def generate_launch_description():
     # 7. Spawn the Robot into Gazebo
     # -------------------------------
     spawn_robot = Node(
-        package='ros_gz_sim',
-        executable='create',
-        parameters=[robot_description],  # ✅ fix: actually pass the URDF
+        package='gazebo_ros',
+        executable='spawn_entity.py',
         arguments=[
-            '-param', 'robot_description',
-            '-name', 'ur',
-            '-allow_renaming', 'true'
+            '-topic','robot_description','-entity','ur',
         ],
         output='screen'
     )
@@ -166,11 +163,10 @@ def generate_launch_description():
     # 10. Combine Everything
     # -------------------------------
     nodes_to_launch = [
-        # MODIFIED: Added the environment variable action
         set_env_vars,
         
         gazebo,
-        robot_state_publisher,     # ✅ new addition
+        robot_state_publisher,
         control_node,
         spawn_robot,
         joint_state_broadcaster_spawner,
