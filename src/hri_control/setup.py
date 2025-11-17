@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
-import os           # <-- MAKE SURE THIS IS HERE
-from glob import glob     # <-- MAKE SURE THIS IS HERE
+import os
+from glob import glob
 
 package_name = 'hri_control'
 
@@ -13,23 +13,33 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         
-        # --- MAKE SURE THIS BLOCK IS HERE ---
         (os.path.join('share', package_name, 'launch'), 
-            glob(os.path.join('launch', '*.launch.py'))),
-        # --- END OF BLOCK ---
+            glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
+            
+        (os.path.join('share', package_name, 'models'), 
+            ['models/shadow_hand_right.urdf']), 
+
+        (os.path.join('share', package_name, 'models/meshes/visual'), 
+            glob('models/meshes/visual/*')),
+
+        (os.path.join('share', package_name, 'models/meshes/collision'), 
+            glob('models/meshes/collision/*')),
+            
+        # --- THIS IS THE NEW LINE YOU NEED TO ADD ---
+        (os.path.join('share', package_name, 'config'), glob('config/*.*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='vboxuser_anagha',
-    maintainer_email='vboxuser_anagha@todo.todo',
-    description='Package for HRI project with RL',
-    license='TODO: License declaration',
+    maintainer='anagha',
+    maintainer_email='vboxuser_anagha@todo',
+    description='HRI RL Control Package',
+    license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'train = hri_control.train:main',
-            'hand_simulator = hri_control.hand_simulator:main',
             'test = hri_control.test:main',
+            'hand_simulator = hri_control.hand_simulator:main',
         ],
     },
 )

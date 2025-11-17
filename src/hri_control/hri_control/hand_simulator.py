@@ -1,46 +1,27 @@
 # This file is hand_simulator.py
 # FINAL VERSION - Corrected for ROS 2 Humble / Gazebo Classic Bridge
-# 1. Spawns a red sphere in Gazebo using /spawn_entity service
+# 1. Spawns a 3D model in Gazebo using /spawn_entity service
 # 2. Moves it in a circle (using /gazebo/set_model_state)
 # 3. Publishes an RViz "Marker" so we can see it
 
+import os
+import ament_index_python.packages
 import rclpy
 from rclpy.node import Node
 from gazebo_msgs.msg import ModelState
-# --- CHANGE 1: Use the classic gazebo_msgs service ---
 from gazebo_msgs.srv import SpawnEntity 
 from geometry_msgs.msg import Pose, Point, Quaternion
 from visualization_msgs.msg import Marker
 import numpy as np
 
-# Blueprint (SDF) for a 5cm red sphere
-SPHERE_SDF = """
-<?xml version="1.0"?>
-<sdf version="1.6">
-  <model name="target_hand">
-    <static>false</static> 
-    <link name="base_link">
-      <visual name="visual">
-        <geometry><sphere><radius>0.05</radius></sphere></geometry>
-        <material>
-          <ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse>
-          <specular>0 0 0 0</specular><emissive>1 0 0 1</emissive>
-        </material>
-      </visual>
-      <collision name="collision">
-        <geometry><sphere><radius>0.05</radius></sphere></geometry>
-      </collision>
-    </link>
-  </model>
-</sdf>
-"""
+# We no longer use the sphere SDF
+# SPHERE_SDF = """..."""
 
 class HandSimulatorNode(Node):
     def __init__(self):
         super().__init__('hand_simulator_node')
         
-        # --- Job 1: The Spawner (Corrected with service list info) ---
-        # --- CHANGE 2: Use the correct service name '/spawn_entity' ---
+        # --- Job 1: The Spawner ---
         self.spawn_client = self.create_client(SpawnEntity, '/spawn_entity')
         
         while not self.spawn_client.wait_for_service(timeout_sec=5.0): # Increased timeout
@@ -63,23 +44,49 @@ class HandSimulatorNode(Node):
         self.spawn_hand_model()
 
     def spawn_hand_model(self):
-        self.get_logger().info("Spawning 'target_hand' model...")
-        req = SpawnEntity.Request()
+        self.get_logger().info("Spawning 'target_hand' model from file...")
         
-        # --- CHANGE 3: Use the classic message structure ---
+        # 1. Find your package path
+        pkg_share = ament_index_python.packages.get_package_share_directory('hri_control')
+        
+        # 2. Define the path to your model file
+        #    !!!! IMPORTANT !!!!
+        #    Gazebo Classic does NOT support .glb files.
+        #    You MUST change this to a model that uses .stl or .dae files
+        #    e.g. "shadow_hand_right_stl.urdf"
+        model_filename = "shadow_hand_right.urdf" # <-- CHANGE THIS
+        model_path = os.path.join(pkg_share, 'models', model_filename) 
+        
+        # 3. Read the model's XML content
+        try:
+            with open(model_path, 'r') as f:
+                model_xml = f.read()
+            self.get_logger().info(f"Successfully loaded model from {model_path}")
+        except FileNotFoundError:
+            self.get_logger().error(f"Could not find model file at {model_path}")
+            self.get_logger().error("Did you forget to add your 'models' folder to 'setup.py' and 'colcon build'?")
+            return
+        except Exception as e:
+            self.get_logger().error(f"Error reading model file: {e}")
+            return
+            
+        # 4. Set up the spawn request
+        req = SpawnEntity.Request()
         req.name = "target_hand"
-        req.xml = SPHERE_SDF
+        req.xml = model_xml 
         req.initial_pose.position.x = 0.5
         req.initial_pose.position.y = 0.3
         req.initial_pose.position.z = 0.5
         
+        # 5. Call the service
         self.spawn_client.call_async(req).add_done_callback(self.spawn_callback)
 
     def spawn_callback(self, future):
         try:
             result = future.result()
             if result.success:
-                self.get_logger().info("--- 'target_hand' sphere spawned successfully! ---")
+                # --- FIXED: Cleaned up log message ---
+                self.get_logger().info("--- 'target_hand' MODEL spawned successfully! ---")
                 self.get_logger().info('Starting the hand-moving timer...')
                 self.timer = self.create_timer(0.02, self.timer_callback) # 50Hz
             else:
@@ -110,23 +117,25 @@ class HandSimulatorNode(Node):
         msg.pose.orientation.w = 1.0
         self.publisher_.publish(msg)
 
-        # 3. Publish the "Marker" command for RViz
+        # 3. Publish the "Marker" command for RViz / hri_env
         marker = Marker()
-        marker.header.frame_id = "base_link" # Put it in the same "world" as the robot
+        marker.header.frame_id = "base_link" 
         marker.header.stamp = self.get_clock().now().to_msg()
         marker.id = 0
-        marker.type = Marker.SPHERE
+        # --- FIXED: This marker is the robot's *target*, not the visual ---
+        # Let's make it a cube so we can tell the difference.
+        marker.type = Marker.CUBE
         marker.action = Marker.ADD
         marker.pose.position.x = x_pos
         marker.pose.position.y = y_pos
         marker.pose.position.z = z_pos
-        marker.scale.x = 0.1 # 10cm sphere (same as 0.05 radius)
-        marker.scale.y = 0.1
-        marker.scale.z = 0.1
-        marker.color.r = 1.0 # Make it red
-        marker.color.g = 0.0
+        marker.scale.x = 0.05
+        marker.scale.y = 0.05
+        marker.scale.z = 0.05
+        marker.color.r = 0.0 # Make it green
+        marker.color.g = 1.0
         marker.color.b = 0.0
-        marker.color.a = 1.0 # Make it solid
+        marker.color.a = 0.8 # Make it slightly transparent
         self.marker_pub.publish(marker)
 
 def main(args=None):
