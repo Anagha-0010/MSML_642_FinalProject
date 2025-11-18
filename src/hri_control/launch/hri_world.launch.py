@@ -36,7 +36,7 @@ def generate_launch_description():
     # -------------------------------
     pkg_gazebo_ros = get_package_share_directory('gazebo_ros')
     pkg_ur_description = get_package_share_directory('ur_description')
-    pkg_ur_simulation_gz = get_package_share_directory('ur_simulation_gz')
+    # pkg_ur_simulation_gz = get_package_share_directory('ur_simulation_gz') # Not used, but ok
     pkg_hri_control = get_package_share_directory('hri_control')
 
     # --- BLOCK TO FIX MESH PATH ---
@@ -50,7 +50,6 @@ def generate_launch_description():
     )
     # --- END OF BLOCK ---
 
-    # --- THIS IS THE START OF THE FIX ---
     # Path to the controller PARAMETERS (our simple YAML)
     ur_controller_params_path = os.path.join(
         pkg_hri_control, 'config', 'ur_simple_controllers.yaml'
@@ -60,7 +59,6 @@ def generate_launch_description():
     ur_simulation_controllers_xacro_path = os.path.join(
         pkg_ur_description, 'urdf', 'ur_ros2_control.xacro'
     )
-    # --- THIS IS THE END OF THE FIX ---
 
 
     # -------------------------------------
@@ -72,18 +70,18 @@ def generate_launch_description():
         Command([
             FindExecutable(name="xacro"),
             " ",
-            PathJoinSubstitution([pkg_ur_description, "urdf", "ur.urdf.xacro"]), # Back to original
-            " ", "name:=ur",
+            PathJoinSubstitution([pkg_ur_description, "urdf", "ur.urdf.xacro"]),
+            " ", "name:=", # <--- THIS IS THE FIX (was 'name:=ur')
             " ", "ur_type:=", ur_type,
             " ", "sim_gazebo:=true",
             " ", "use_fake_hardware:=false",
-            # --- ADD THESE LINES ---
-            " ", "hardware_interface:=PositionJointInterface",
-            " ", "robot_description_controller:=", ur_simulation_controllers_xacro_path, # Use the correct variable
-            # --- END ADDITIONS ---
-            " ", "simulation_controllers:=", ur_simulation_controllers_xacro_path, 
-            # ...
-            " ", "simulation_controllers:=", ur_simulation_controllers_xacro_path, # <-- FIXED
+            
+            # --- THIS IS THE CORRECTED PART ---
+            # This argument tells the XACRO where to find the <ros2_control> tags
+            # This argument tells the XACFRO where to find the controller list
+            " ", "ros2_control_params:=", ur_controller_params_path,
+            # --- END CORRECTION ---
+
             " ", "prefix:=", prefix,
             " ", "safety_limits:=", safety_limits,
             " ", "safety_pos_margin:=", safety_pos_margin,
@@ -99,14 +97,6 @@ def generate_launch_description():
         package="robot_state_publisher",
         executable="robot_state_publisher",
         parameters=[ur_robot_description],
-        output="screen",
-    )
-
-    # UR Controller Manager
-    ur_control_node = Node(
-        package="controller_manager",
-        executable="ros2_control_node",
-        parameters=[ur_robot_description, ur_controller_params_path], # <-- FIXED
         output="screen",
     )
 
@@ -137,11 +127,11 @@ def generate_launch_description():
     )
 
     # -------------------------------------
-    # 4. ROBOT 2: THE SHADOW HAND
+    # 4. ROBOT 2: THE DUMMY HAND
     # -------------------------------------
 
     # Load the hand's URDF file directly
-    hand_urdf_path = os.path.join(pkg_hri_control, 'models', 'shadow_hand_right.urdf')
+    hand_urdf_path = os.path.join(pkg_hri_control, 'models', 'dummy_hand.urdf')
     hand_robot_description_content = xacro.process_file(hand_urdf_path).toxml()
     hand_robot_description = {"robot_description": hand_robot_description_content}
 
@@ -149,7 +139,7 @@ def generate_launch_description():
     hand_robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        namespace='shadow_hand', # <-- IMPORTANT
+        namespace='dummy_hand', # <-- UPDATED
         parameters=[hand_robot_description],
         output='screen',
     )
@@ -159,8 +149,8 @@ def generate_launch_description():
         package='gazebo_ros',
         executable='spawn_entity.py',
         arguments=[
-            '-topic', '/shadow_hand/robot_description', # <-- IMPORTANT (uses namespace)
-            '-entity', 'shadow_hand',                   # The name in Gazebo
+            '-topic', '/dummy_hand/robot_description', # <-- UPDATED
+            '-entity', 'dummy_hand',                   # <-- UPDATED
             '-x', '1.0',  # Spawn it 1 meter away so it's not inside the UR
             '-y', '0.0',
             '-z', '0.5'
@@ -188,7 +178,7 @@ def generate_launch_description():
         
         # UR Robot Nodes
         ur_robot_state_publisher,
-        ur_control_node,
+        # ur_control_node, # <--- This is correctly commented out
         ur_spawn_robot,
         joint_state_broadcaster_spawner,
         joint_trajectory_controller_spawner,

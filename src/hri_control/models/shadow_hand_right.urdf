@@ -39,7 +39,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0.0"/>
       <geometry name="forearm_visual">
-        <mesh filename="package://hri_control/models/meshes/visual/wrist_E3M5.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes/visual/wrist_E3M5.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>

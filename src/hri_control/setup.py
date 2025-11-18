@@ -17,7 +17,7 @@ setup(
             glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
             
         (os.path.join('share', package_name, 'models'), 
-            ['models/shadow_hand_right.urdf']), 
+            glob('models/*.urdf')), 
 
         (os.path.join('share', package_name, 'models/meshes/visual'), 
             glob('models/meshes/visual/*')),
