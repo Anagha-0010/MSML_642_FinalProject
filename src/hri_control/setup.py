@@ -12,21 +12,26 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        
-        (os.path.join('share', package_name, 'launch'), 
-            glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
-            
-        (os.path.join('share', package_name, 'models'), 
-            glob('models/*.urdf')), 
 
-        (os.path.join('share', package_name, 'models/meshes/visual'), 
+        # Launch files
+        (os.path.join('share', package_name, 'launch'),
+            glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
+
+        # URDF models
+        (os.path.join('share', package_name, 'models'),
+            glob('models/*.urdf')),
+
+        # Visual meshes
+        (os.path.join('share', package_name, 'models/meshes/visual'),
             glob('models/meshes/visual/*')),
 
-        (os.path.join('share', package_name, 'models/meshes/collision'), 
+        # Collision meshes
+        (os.path.join('share', package_name, 'models/meshes/collision'),
             glob('models/meshes/collision/*')),
-            
-        # --- THIS IS THE NEW LINE YOU NEED TO ADD ---
-        (os.path.join('share', package_name, 'config'), glob('config/*.*')),
+
+        # Config files (YAML)
+        (os.path.join('share', package_name, 'config'),
+            glob('config/*.*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -40,6 +45,8 @@ setup(
             'train = hri_control.train:main',
             'test = hri_control.test:main',
             'hand_simulator = hri_control.hand_simulator:main',
+            'hand_mover = hri_control.hand_mover:main',
         ],
     },
 )
+

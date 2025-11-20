@@ -2,7 +2,7 @@
 # This is the main script you will run to start the RL training.
 
 import rclpy
-from hri_control.hri_env import HriEnv  # Import our custom environment
+from hri_control.hri_env_final import HriEnv  # Import our custom environment
 from stable_baselines3 import SAC
 # --- 1. ADD THIS IMPORT ---
 from stable_baselines3.common.callbacks import CheckpointCallback
@@ -39,7 +39,7 @@ def main(args=None):
     print("SAC model initialized.")
 
     # --- 4. Train the Agent ---
-    total_timesteps = 100000
+    total_timesteps = 2000
     print(f"Starting training for {total_timesteps} timesteps...")
     
     start_time = time.time()

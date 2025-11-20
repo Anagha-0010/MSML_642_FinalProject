@@ -10,7 +10,7 @@ import rclpy
 from rclpy.node import Node
 from gazebo_msgs.msg import ModelState
 from gazebo_msgs.srv import SpawnEntity 
-from geometry_msgs.msg import Pose, Point, Quaternion
+from geometry_msgs.msg import Pose, Point, Quaternion, PoseStamped
 from visualization_msgs.msg import Marker
 import numpy as np
 
@@ -20,6 +20,8 @@ import numpy as np
 class HandSimulatorNode(Node):
     def __init__(self):
         super().__init__('hand_simulator_node')
+        self.pose_pub = self.create_publisher(PoseStamped, '/target_pose', 10)
+
         
         # --- Job 1: The Spawner ---
         self.spawn_client = self.create_client(SpawnEntity, '/spawn_entity')
@@ -54,7 +56,7 @@ class HandSimulatorNode(Node):
         #    Gazebo Classic does NOT support .glb files.
         #    You MUST change this to a model that uses .stl or .dae files
         #    e.g. "shadow_hand_right_stl.urdf"
-        model_filename = "shadow_hand_right.urdf" # <-- CHANGE THIS
+        model_filename = "target_hand.urdf" # <-- CHANGE THIS
         model_path = os.path.join(pkg_share, 'models', model_filename) 
         
         # 3. Read the model's XML content
@@ -137,6 +139,7 @@ class HandSimulatorNode(Node):
         marker.color.b = 0.0
         marker.color.a = 0.8 # Make it slightly transparent
         self.marker_pub.publish(marker)
+        
 
 def main(args=None):
     rclpy.init(args=args)
