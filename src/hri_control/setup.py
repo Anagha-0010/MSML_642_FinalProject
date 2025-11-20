@@ -32,6 +32,10 @@ setup(
         # Config files (YAML)
         (os.path.join('share', package_name, 'config'),
             glob('config/*.*')),
+            
+        (os.path.join('share', package_name, 'worlds'),
+   	    glob('worlds/*.world')),
+
     ],
     install_requires=['setuptools'],
     zip_safe=True,

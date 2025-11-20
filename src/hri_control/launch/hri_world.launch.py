@@ -151,8 +151,7 @@ def generate_launch_description():
             "verbose": "true",
             "paused": "false",
             "use_sim_time": "true",
-            'world': os.path.join(pkg_hri_control, 'worlds', 'hri_world.world'),
-            'extra_gazebo_args': '-s libgazebo_ros_api_plugin.so -s libgazebo_ros_state.so'
+            'world': os.path.join(pkg_hri_control, 'worlds', 'hri_world.world')
 
         }.items()
     )

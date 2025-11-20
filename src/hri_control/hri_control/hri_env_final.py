@@ -2,21 +2,18 @@
 
 import rclpy
 from rclpy.node import Node
-
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-
 from sensor_msgs.msg import JointState
+from geometry_msgs.msg import PoseStamped
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from visualization_msgs.msg import Marker
 from builtin_interfaces.msg import Duration
+import csv, os, time
 
 from hri_control.fk_helper import FKWrapper
 
-
-# Order of joints for UR5e
-UR5E_JOINT_NAMES = [
+UR5_JOINTS = [
     "shoulder_pan_joint",
     "shoulder_lift_joint",
     "elbow_joint",
@@ -25,214 +22,152 @@ UR5E_JOINT_NAMES = [
     "wrist_3_joint",
 ]
 
-MAX_JOINT_VELOCITY = 0.5  # rad/s max from action scaling
-
+MAX_VEL = 0.4
 
 class HriEnv(Node, gym.Env):
-    """
-    Final version of RL environment for Human-Robot Imitation.
-    Includes:
-      - FK-based end effector position
-      - Marker-based moving target
-      - UR5e joint control
-      - Clean observation + reward
-    """
-
     def __init__(self):
         super().__init__("hri_env_node")
         gym.Env.__init__(self)
 
         self.get_logger().info("HRI Environment FINAL starting...")
 
-        # obs = joint_pos(6) + joint_vel(6) + ee_xyz(3) + target_xyz(3)
-        obs_dim = 6 + 6 + 3 + 3
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(18,), dtype=np.float32
         )
-
-        # actions = desired joint velocity commands (6)
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(6,), dtype=np.float32
         )
 
-        # subscribers & publishers
-        self.joint_state_sub = self.create_subscription(
-            JointState, "/joint_states", self.joint_state_cb, 10
+        self.joint_sub = self.create_subscription(
+            JointState, "/joint_states", self.joint_cb, 10
         )
-
-        # **CORRECT FIX** — Subscribe to Marker topic published by hand_simulator
         self.target_sub = self.create_subscription(
-            Marker, "/target_hand_marker", self.target_cb, 10
+            PoseStamped, "/target_pose", self.target_cb, 10
         )
-
-        self.trajectory_pub = self.create_publisher(
+        self.cmd_pub = self.create_publisher(
             JointTrajectory, "/joint_trajectory_controller/joint_trajectory", 10
         )
 
-        # Buffers
-        self.last_joint_positions = None
-        self.last_joint_velocities = None
-        self.last_target_pos = None
+        self.last_pos = None
+        self.last_vel = None
+        self.last_target = None
         self.state_received = False
-        self.target_received = False
 
-        # FK wrapper
-        try:
-            self.fk = FKWrapper(self, UR5E_JOINT_NAMES)
-            self.get_logger().info(
-                f"FK initialized. Base: {self.fk.base_link}, EE: {self.fk.ee_link}"
-            )
-        except Exception as e:
-            self.get_logger().error(f"FK initialization failed: {e}")
-            raise
+        self.fk = FKWrapper(self, UR5_JOINTS)
 
-        # Step timing
-        self.timer_period = 0.1  # 10 Hz control
+        self.prev_action = np.zeros(6, dtype=np.float32)
+        self.timer_period = 0.1
         self.current_step = 0
         self.episode_reward = 0.0
 
-    # --------------------------
-    #  CALLBACKS
-    # --------------------------
+        # CSV logging
+        self.log_path = os.path.expanduser("~/hri_reward_log.csv")
+        if not os.path.exists(self.log_path):
+            with open(self.log_path, "w") as f:
+                writer = csv.writer(f)
+                writer.writerow(["episode", "reward"])
 
-    def joint_state_cb(self, msg: JointState):
-        """Map joint states into consistent UR5e order."""
-        msg_pos = dict(zip(msg.name, msg.position))
-        msg_vel = dict(zip(msg.name, msg.velocity if msg.velocity else [0]*len(msg_pos)))
+        self.episode_count = 0
 
-        pos = [msg_pos.get(name, 0.0) for name in UR5E_JOINT_NAMES]
-        vel = [msg_vel.get(name, 0.0) for name in UR5E_JOINT_NAMES]
+    def joint_cb(self, msg):
+        pos = []
+        vel = []
+        dpos = dict(zip(msg.name, msg.position))
+        dvel = dict(zip(msg.name, msg.velocity))
 
-        self.last_joint_positions = np.array(pos, dtype=np.float32)
-        self.last_joint_velocities = np.array(vel, dtype=np.float32)
+        for j in UR5_JOINTS:
+            pos.append(dpos.get(j, 0.0))
+            vel.append(dvel.get(j, 0.0))
+
+        self.last_pos = np.array(pos, dtype=np.float32)
+        self.last_vel = np.array(vel, dtype=np.float32)
         self.state_received = True
 
-    def target_cb(self, msg: Marker):
-        """Extract XYZ from Marker.pose."""
-        self.last_target_pos = np.array(
-            [
-                msg.pose.position.x,
-                msg.pose.position.y,
-                msg.pose.position.z,
-            ],
-            dtype=np.float32,
-        )
-        self.target_received = True
+    def target_cb(self, msg):
+        self.last_target = np.array([
+            msg.pose.position.x,
+            msg.pose.position.y,
+            msg.pose.position.z
+        ], dtype=np.float32)
 
-    # --------------------------
-    #  ACTION APPLICATION
-    # --------------------------
-
-    def _publish_action(self, action_vel):
-        """Convert action into JointTrajectory position targets."""
-        if self.last_joint_positions is None:
-            return
-
-        scaled = np.clip(action_vel, -1, 1) * MAX_JOINT_VELOCITY
-        new_positions = self.last_joint_positions + scaled * self.timer_period
+    def _publish_action(self, action):
+        scaled = action * MAX_VEL
+        new_pos = (self.last_pos + scaled * self.timer_period).tolist()
 
         traj = JointTrajectory()
-        traj.joint_names = UR5E_JOINT_NAMES
+        traj.joint_names = UR5_JOINTS
+        p = JointTrajectoryPoint()
+        p.positions = new_pos
+        p.time_from_start = Duration(sec=0, nanosec=int(self.timer_period * 1e9))
+        traj.points.append(p)
 
-        point = JointTrajectoryPoint()
-        point.positions = new_positions.tolist()
-        point.time_from_start = Duration(sec=0, nanosec=int(self.timer_period * 1e9))
-
-        traj.points.append(point)
-        self.trajectory_pub.publish(traj)
-
-    # --------------------------
-    #  STEP FUNCTION
-    # --------------------------
+        self.cmd_pub.publish(traj)
 
     def step(self, action):
-        """Main RL loop step."""
-        # Ensure we have sensor data
-        if not self.state_received or not self.target_received:
-            rclpy.spin_once(self, timeout_sec=0.05)
-            if not self.state_received or not self.target_received:
-                return (
-                    np.zeros(self.observation_space.shape, dtype=np.float32),
-                    -1.0,
-                    True,
-                    False,
-                    {"error": "missing data"},
-                )
+        if self.last_pos is None or self.last_target is None:
+            rclpy.spin_once(self, timeout_sec=0.1)
 
-        # Apply joint action
+        # Smooth action
+        action = 0.7 * action + 0.3 * self.prev_action
+        self.prev_action = action
+
         self._publish_action(action)
 
-        # Wait one control period
-        t_start = self.get_clock().now().nanoseconds
-        while self.get_clock().now().nanoseconds < t_start + int(self.timer_period * 1e9):
+        # Wait until next state
+        end_time = self.get_clock().now().nanoseconds + int(self.timer_period * 1e9)
+        while self.get_clock().now().nanoseconds < end_time:
             rclpy.spin_once(self, timeout_sec=0.01)
 
-        # Compute FK end effector
-        ee_pos = self.fk.compute_fk(self.last_joint_positions)
+        ee = self.fk.compute_fk(self.last_pos)
 
-        # Build observation
-        obs = np.concatenate(
-            [
-                self.last_joint_positions,
-                self.last_joint_velocities,
-                ee_pos,
-                self.last_target_pos,
-            ]
-        ).astype(np.float32)
+        obs = np.concatenate([
+            self.last_pos,
+            self.last_vel,
+            ee,
+            self.last_target
+        ])
 
-        # Reward = negative distance + small penalty
-        distance = np.linalg.norm(ee_pos - self.last_target_pos)
-        vel_penalty = 0.01 * np.sum((action * MAX_JOINT_VELOCITY) ** 2)
+        dist = np.linalg.norm(ee - self.last_target)
 
-        reward = -distance - vel_penalty
+        action_penalty = 0.01 * np.sum(np.square(action))
+        smooth_penalty = 0.02 * np.sum(np.square(action - self.prev_action))
+
+        reward = -dist - action_penalty - smooth_penalty
 
         self.episode_reward += reward
         self.current_step += 1
 
-        # Episode termination
         terminated = False
-        truncated = False
+        truncated = (self.current_step >= 200)
 
-        if self.current_step >= 200:
-            truncated = True
-            self.get_logger().info(
-                f"Episode finished. Total reward: {self.episode_reward:.3f}"
-            )
+        if truncated:
+            with open(self.log_path, "a") as f:
+                writer = csv.writer(f)
+                writer.writerow([self.episode_count, self.episode_reward])
 
-        return obs, float(reward), terminated, truncated, {}
+            self.get_logger().info(f"Episode finished. Total reward: {self.episode_reward:.3f}")
+            self.episode_count += 1
 
-    # --------------------------
-    #  RESET FUNCTION
-    # --------------------------
+        return obs.astype(np.float32), reward, terminated, truncated, {}
 
     def reset(self, seed=None, options=None):
-        if seed is not None:
-            super().reset(seed=seed)
+        super().reset(seed=seed)
 
         self.current_step = 0
         self.episode_reward = 0.0
+        self.prev_action = np.zeros(6)
 
-        # Wait for data
-        t0 = self.get_clock().now().nanoseconds
-        timeout = 5.0
-        while (not self.state_received or not self.target_received) and \
-              ((self.get_clock().now().nanoseconds - t0) * 1e-9 < timeout):
+        while (self.last_pos is None or self.last_target is None):
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        if not self.state_received or not self.target_received:
-            raise RuntimeError("Timeout waiting for joint_state or target marker")
+        ee = self.fk.compute_fk(self.last_pos)
 
-        # Compute initial FK
-        ee_pos = self.fk.compute_fk(self.last_joint_positions)
+        obs = np.concatenate([
+            self.last_pos,
+            self.last_vel,
+            ee,
+            self.last_target
+        ])
 
-        obs = np.concatenate(
-            [
-                self.last_joint_positions,
-                self.last_joint_velocities if self.last_joint_velocities is not None else np.zeros(6),
-                ee_pos,
-                self.last_target_pos,
-            ]
-        ).astype(np.float32)
-
-        return obs, {}
+        return obs.astype(np.float32), {}
 

@@ -98,47 +98,61 @@ class HandSimulatorNode(Node):
                     self.timer = self.create_timer(0.02, self.timer_callback)
         except Exception as e:
             self.get_logger().error(f"Spawn service call failed: {e}")
-
+            
     def timer_callback(self):
-        # 1. Calculate the new position
-        current_time = (self.get_clock().now().nanoseconds * 1e-9) - self.start_time
-        radius = 0.2
-        center_x = 0.5
-        center_y = 0.3
-        center_z = 0.5
-        x_pos = center_x + radius * np.cos(current_time)
-        y_pos = center_y + radius * np.sin(current_time)
-        z_pos = center_z
-        
-        # 2. Publish the "Move" command for Gazebo
-        msg = ModelState()
-        msg.model_name = 'target_hand'
-        msg.pose.position.x = x_pos
-        msg.pose.position.y = y_pos
-        msg.pose.position.z = z_pos
-        msg.pose.orientation.w = 1.0
-        self.publisher_.publish(msg)
+	    # 1. Calculate the new position
+	    current_time = (self.get_clock().now().nanoseconds * 1e-9) - self.start_time
+	    radius = 0.2
+	    center_x = 0.5
+	    center_y = 0.3
+	    center_z = 0.5
+	    x_pos = center_x + radius * np.cos(current_time)
+	    y_pos = center_y + radius * np.sin(current_time)
+	    z_pos = center_z
 
-        # 3. Publish the "Marker" command for RViz / hri_env
-        marker = Marker()
-        marker.header.frame_id = "base_link" 
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.id = 0
-        # --- FIXED: This marker is the robot's *target*, not the visual ---
-        # Let's make it a cube so we can tell the difference.
-        marker.type = Marker.CUBE
-        marker.action = Marker.ADD
-        marker.pose.position.x = x_pos
-        marker.pose.position.y = y_pos
-        marker.pose.position.z = z_pos
-        marker.scale.x = 0.05
-        marker.scale.y = 0.05
-        marker.scale.z = 0.05
-        marker.color.r = 0.0 # Make it green
-        marker.color.g = 1.0
-        marker.color.b = 0.0
-        marker.color.a = 0.8 # Make it slightly transparent
-        self.marker_pub.publish(marker)
+	    # 2. Publish the "Move" command for Gazebo
+	    msg = ModelState()
+	    msg.model_name = 'target_hand'
+	    msg.pose.position.x = x_pos
+	    msg.pose.position.y = y_pos
+	    msg.pose.position.z = z_pos
+	    msg.pose.orientation.w = 1.0
+	    self.publisher_.publish(msg)
+
+	    # 3. Publish the pose for RL training (THIS WAS MISSING)
+	    pose_msg = PoseStamped()
+	    pose_msg.header.stamp = self.get_clock().now().to_msg()
+	    pose_msg.header.frame_id = "world"   # or "base_link", depending on your setup
+	    pose_msg.pose.position.x = x_pos
+	    pose_msg.pose.position.y = y_pos
+	    pose_msg.pose.position.z = z_pos
+	    pose_msg.pose.orientation.w = 1.0
+	    self.pose_pub.publish(pose_msg)
+
+	    # 4. Publish the marker for RViz
+	    marker = Marker()
+	    marker.header.frame_id = "base_link"
+	    marker.header.stamp = self.get_clock().now().to_msg()
+	    marker.id = 0
+	    marker.type = Marker.CUBE
+	    marker.action = Marker.ADD
+	    marker.pose.position.x = x_pos
+	    marker.pose.position.y = y_pos
+	    marker.pose.position.z = z_pos
+	    marker.scale.x = 0.05
+	    marker.scale.y = 0.05
+	    marker.scale.z = 0.05
+	    marker.color.r = 0.0
+	    marker.color.g = 1.0
+	    marker.color.b = 0.0
+	    marker.color.a = 0.8
+	    self.marker_pub.publish(marker)
+
+            
+    
+
+ 
+
         
 
 def main(args=None):
