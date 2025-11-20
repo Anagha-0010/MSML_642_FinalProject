@@ -1,169 +1,269 @@
-# This file is hand_simulator.py
-# FINAL VERSION - Corrected for ROS 2 Humble / Gazebo Classic Bridge
-# 1. Spawns a 3D model in Gazebo using /spawn_entity service
-# 2. Moves it in a circle (using /gazebo/set_model_state)
-# 3. Publishes an RViz "Marker" so we can see it
-
+#!/usr/bin/env python3
 import os
-import ament_index_python.packages
 import rclpy
 from rclpy.node import Node
-from gazebo_msgs.msg import ModelState
-from gazebo_msgs.srv import SpawnEntity 
-from geometry_msgs.msg import Pose, Point, Quaternion, PoseStamped
+import ament_index_python.packages
+
+from gazebo_msgs.srv import SpawnEntity, SetEntityState
+from gazebo_msgs.msg import EntityState
 from visualization_msgs.msg import Marker
+from geometry_msgs.msg import PoseStamped
+
 import numpy as np
 
-# We no longer use the sphere SDF
-# SPHERE_SDF = """..."""
 
 class HandSimulatorNode(Node):
     def __init__(self):
-        super().__init__('hand_simulator_node')
-        self.pose_pub = self.create_publisher(PoseStamped, '/target_pose', 10)
+        super().__init__("hand_simulator_node")
 
-        
-        # --- Job 1: The Spawner ---
-        self.spawn_client = self.create_client(SpawnEntity, '/spawn_entity')
-        
-        while not self.spawn_client.wait_for_service(timeout_sec=5.0): # Increased timeout
-            self.get_logger().info('Spawn service (/spawn_entity) not available, waiting...')
-            if not rclpy.ok():
-                self.get_logger().error("RCLPY shut down, exiting.")
-                return
-        
-        self.get_logger().info("Spawn service IS available. Spawning model...")
+        # ------------------------------
+        # Publishers
+        # ------------------------------
+        self.pose_pub = self.create_publisher(PoseStamped, "/target_pose", 10)
+        self.marker_pub = self.create_publisher(Marker, "/target_hand_marker", 10)
 
-        # --- Job 2: The Mover ---
-        self.publisher_ = self.create_publisher(ModelState, '/gazebo/set_model_state', 10)
-        
-        # --- Job 3: The RViz Visualizer ---
-        self.marker_pub = self.create_publisher(Marker, '/target_hand_marker', 10)
-        
-        self.timer = None
+        # ------------------------------
+        # Gazebo service clients
+        # ------------------------------
+        self.spawn_client = self.create_client(SpawnEntity, "/spawn_entity")
+        self.move_client = self.create_client(SetEntityState, "/set_entity_state")
+
+        self.get_logger().info("Waiting for Gazebo services...")
+
+        while not self.spawn_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting /spawn_entity...")
+
+        while not self.move_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting /set_entity_state...")
+
+        self.get_logger().info("All Gazebo services available!")
+
+        # Flags to avoid moving nonexistent models
+        self.hand_spawned = False
+        self.obj_spawned = False
+
+        # Spawn both models
+        self.spawn_hand()
+        self.spawn_object()
+
+        # Timer (but animation waits until models exist)
         self.start_time = self.get_clock().now().nanoseconds * 1e-9
+        self.timer = self.create_timer(0.02, self.animate)  # 50 Hz
 
-        self.spawn_hand_model()
+    # ---------------------------------------------------------
+    # SPAWN HAND MODEL
+    # ---------------------------------------------------------
+    def spawn_hand(self):
+        pkg_share = ament_index_python.packages.get_package_share_directory("hri_control")
+        hand_path = os.path.join(pkg_share, "models", "target_hand.urdf")
 
-    def spawn_hand_model(self):
-        self.get_logger().info("Spawning 'target_hand' model from file...")
-        
-        # 1. Find your package path
-        pkg_share = ament_index_python.packages.get_package_share_directory('hri_control')
-        
-        # 2. Define the path to your model file
-        #    !!!! IMPORTANT !!!!
-        #    Gazebo Classic does NOT support .glb files.
-        #    You MUST change this to a model that uses .stl or .dae files
-        #    e.g. "shadow_hand_right_stl.urdf"
-        model_filename = "target_hand.urdf" # <-- CHANGE THIS
-        model_path = os.path.join(pkg_share, 'models', model_filename) 
-        
-        # 3. Read the model's XML content
-        try:
-            with open(model_path, 'r') as f:
-                model_xml = f.read()
-            self.get_logger().info(f"Successfully loaded model from {model_path}")
-        except FileNotFoundError:
-            self.get_logger().error(f"Could not find model file at {model_path}")
-            self.get_logger().error("Did you forget to add your 'models' folder to 'setup.py' and 'colcon build'?")
-            return
-        except Exception as e:
-            self.get_logger().error(f"Error reading model file: {e}")
-            return
-            
-        # 4. Set up the spawn request
         req = SpawnEntity.Request()
         req.name = "target_hand"
-        req.xml = model_xml 
-        req.initial_pose.position.x = 0.5
-        req.initial_pose.position.y = 0.3
-        req.initial_pose.position.z = 0.5
-        
-        # 5. Call the service
-        self.spawn_client.call_async(req).add_done_callback(self.spawn_callback)
+        req.xml = open(hand_path).read()
+        req.initial_pose.position.x = 0.3
+        req.initial_pose.position.y = 0.25
+        req.initial_pose.position.z = 0.35
 
-    def spawn_callback(self, future):
+        future = self.spawn_client.call_async(req)
+        future.add_done_callback(self.hand_spawn_callback)
+
+    def hand_spawn_callback(self, future):
         try:
             result = future.result()
             if result.success:
-                # --- FIXED: Cleaned up log message ---
-                self.get_logger().info("--- 'target_hand' MODEL spawned successfully! ---")
-                self.get_logger().info('Starting the hand-moving timer...')
-                self.timer = self.create_timer(0.02, self.timer_callback) # 50Hz
+                self.get_logger().info("HAND successfully spawned!")
+                self.hand_spawned = True
             else:
-                self.get_logger().error(f"Failed to spawn: {result.status_message}")
-                if "exists" in result.status_message:
-                    self.get_logger().warn("Model already exists. Starting timer anyway.")
-                    self.timer = self.create_timer(0.02, self.timer_callback)
+                self.get_logger().error(f"HAND spawn failed: {result.status_message}")
         except Exception as e:
-            self.get_logger().error(f"Spawn service call failed: {e}")
-            
-    def timer_callback(self):
-	    # 1. Calculate the new position
-	    current_time = (self.get_clock().now().nanoseconds * 1e-9) - self.start_time
-	    radius = 0.2
-	    center_x = 0.5
-	    center_y = 0.3
-	    center_z = 0.5
-	    x_pos = center_x + radius * np.cos(current_time)
-	    y_pos = center_y + radius * np.sin(current_time)
-	    z_pos = center_z
+            self.get_logger().error(f"HAND spawn callback error: {e}")
 
-	    # 2. Publish the "Move" command for Gazebo
-	    msg = ModelState()
-	    msg.model_name = 'target_hand'
-	    msg.pose.position.x = x_pos
-	    msg.pose.position.y = y_pos
-	    msg.pose.position.z = z_pos
-	    msg.pose.orientation.w = 1.0
-	    self.publisher_.publish(msg)
+    # ---------------------------------------------------------
+    # SPAWN OBJECT IN HAND
+    # ---------------------------------------------------------
+    def spawn_object(self):
+        # Tiny cube the human is "holding"
+        cube_sdf = """
+        <?xml version="1.0" ?>
+        <sdf version="1.6">
+          <model name="handover_object">
+            <static>false</static>
+            <link name="obj_link">
+              <visual name="obj_visual">
+                <geometry>
+                  <box><size>0.03 0.03 0.03</size></box>
+                </geometry>
+                <material>
+                  <ambient>0.9 0 0 1</ambient>
+                </material>
+              </visual>
+            </link>
+          </model>
+        </sdf>
+        """
 
-	    # 3. Publish the pose for RL training (THIS WAS MISSING)
-	    pose_msg = PoseStamped()
-	    pose_msg.header.stamp = self.get_clock().now().to_msg()
-	    pose_msg.header.frame_id = "world"   # or "base_link", depending on your setup
-	    pose_msg.pose.position.x = x_pos
-	    pose_msg.pose.position.y = y_pos
-	    pose_msg.pose.position.z = z_pos
-	    pose_msg.pose.orientation.w = 1.0
-	    self.pose_pub.publish(pose_msg)
+        req = SpawnEntity.Request()
+        req.name = "handover_object"
+        req.xml = cube_sdf
+        req.initial_pose.position.x = 0.3
+        req.initial_pose.position.y = 0.25
+        req.initial_pose.position.z = 0.40
 
-	    # 4. Publish the marker for RViz
-	    marker = Marker()
-	    marker.header.frame_id = "base_link"
-	    marker.header.stamp = self.get_clock().now().to_msg()
-	    marker.id = 0
-	    marker.type = Marker.CUBE
-	    marker.action = Marker.ADD
-	    marker.pose.position.x = x_pos
-	    marker.pose.position.y = y_pos
-	    marker.pose.position.z = z_pos
-	    marker.scale.x = 0.05
-	    marker.scale.y = 0.05
-	    marker.scale.z = 0.05
-	    marker.color.r = 0.0
-	    marker.color.g = 1.0
-	    marker.color.b = 0.0
-	    marker.color.a = 0.8
-	    self.marker_pub.publish(marker)
+        future = self.spawn_client.call_async(req)
+        future.add_done_callback(self.obj_spawn_callback)
 
-            
-    
+    def obj_spawn_callback(self, future):
+        try:
+            result = future.result()
+            if result.success:
+                self.get_logger().info("OBJECT cube successfully spawned!")
+                self.obj_spawned = True
+            else:
+                self.get_logger().error(f"OBJECT spawn failed: {result.status_message}")
+        except Exception as e:
+            self.get_logger().error(f"OBJECT spawn callback error: {e}")
 
- 
+    # ---------------------------------------------------------
+    # MAIN ANIMATION LOOP
+    # ---------------------------------------------------------
+    def animate(self):
+        # Avoid moving nonexistent models
+        if not (self.hand_spawned and self.obj_spawned):
+            return
 
+        t = (self.get_clock().now().nanoseconds * 1e-9) - self.start_time
+
+        # ----------------------
+        # Trajectory parameters
+        # ----------------------
+        start_x = 0.3
+        offer_x = 0.6
+        base_y = 0.25
+        base_z = 0.35
+
+        phase = t % 8.0
+        z = base_z
+
+        if phase < 2.0:
+            # Extending
+            progress = phase / 2.0
+            alpha = 0.5 * (1 - np.cos(np.pi * progress))
+            x = start_x + alpha * (offer_x - start_x)
+            y = base_y
+            wrist_rot = 0.0
+
+        elif phase < 4.0:
+            # Holding
+            x = offer_x
+            y = base_y
+            z = base_z
+            wrist_rot = 0.1
+
+        elif phase < 6.0:
+            # Invitation shake
+            x = offer_x
+            y = base_y + 0.02 * np.sin(3 * (phase - 4))
+            wrist_rot = 0.10 * np.sin(2 * (phase - 4))
+            z = base_z + 0.01 * np.sin(1.5 * (phase - 4))
+
+        else:
+            # Retracting
+            progress = (phase - 6.0) / 2.0
+            alpha = 0.5 * (1 - np.cos(np.pi * progress))
+            x = offer_x - alpha * (offer_x - start_x)
+            y = base_y
+            wrist_rot = 0.0
         
+        if phase < 2.0 or phase >= 6.0:
+            z = base_z + 0.02 * np.sin(alpha * np.pi)
 
-def main(args=None):
-    rclpy.init(args=args)
-    hand_simulator_node = HandSimulatorNode()
-    try:
-        rclpy.spin(hand_simulator_node)
-    except KeyboardInterrupt:
-        pass
-    hand_simulator_node.destroy_node()
+        # ---------------------------------------
+        # Natural handover orientation:
+        # - yaw: face the robot
+        # - pitch: 30° upward tilt (palm up)
+        # - roll: 90° + small wrist oscillation
+        # ---------------------------------------
+        yaw = np.pi
+        pitch = 0.52           # ~30 degrees
+        roll = 1.57 + wrist_rot  # 90° plus wrist motion
+
+        # -------------------------
+        # Euler → Quaternion
+        # -------------------------
+        cy = np.cos(yaw * 0.5)
+        sy = np.sin(yaw * 0.5)
+        cr = np.cos(roll * 0.5)
+        sr = np.sin(roll * 0.5)
+        cp = np.cos(pitch * 0.5)
+        sp = np.sin(pitch * 0.5)
+
+        q_w = cy * cr * cp + sy * sr * sp
+        q_x = cy * sr * cp - sy * cr * sp
+        q_y = cy * cr * sp + sy * sr * cp
+        q_z = sy * cr * cp - cy * sr * sp
+
+        # -------------------------
+        # MOVE HAND
+        # -------------------------
+        hand_state = EntityState()
+        hand_state.name = "target_hand"
+        hand_state.pose.position.x = x
+        hand_state.pose.position.y = y
+        hand_state.pose.position.z = z
+        hand_state.pose.orientation.w = q_w
+        hand_state.pose.orientation.x = q_x
+        hand_state.pose.orientation.y = q_y
+        hand_state.pose.orientation.z = q_z
+
+        self.move_client.call_async(SetEntityState.Request(state=hand_state))
+
+        # -------------------------
+        # MOVE OBJECT (offset in palm)
+        # -------------------------
+        obj = EntityState()
+        obj.name = "handover_object"
+        obj.pose.position.x = x + 0.03   # slightly toward fingers
+        obj.pose.position.y = y
+        obj.pose.position.z = z + 0.025  # resting on the palm
+        obj.pose.orientation = hand_state.pose.orientation
+
+        self.move_client.call_async(SetEntityState.Request(state=obj))
+
+        # -------------------------
+        # RVIZ MARKER
+        # -------------------------
+        marker = Marker()
+        marker.header.frame_id = "base_link"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.type = Marker.CUBE
+        marker.action = Marker.ADD
+        marker.pose = hand_state.pose
+        marker.scale.x = marker.scale.y = marker.scale.z = 0.05
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 0.8
+
+        self.marker_pub.publish(marker)
+
+        # -------------------------
+        # RL target pose
+        # -------------------------
+        pose = PoseStamped()
+        pose.header.frame_id = "base_link"
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.pose = hand_state.pose
+
+        self.pose_pub.publish(pose)
+
+
+def main():
+    rclpy.init()
+    node = HandSimulatorNode()
+    rclpy.spin(node)
     rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
+

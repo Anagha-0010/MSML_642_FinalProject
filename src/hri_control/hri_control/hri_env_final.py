@@ -24,20 +24,21 @@ UR5_JOINTS = [
 
 MAX_VEL = 0.4
 
+
 class HriEnv(Node, gym.Env):
     def __init__(self):
         super().__init__("hri_env_node")
         gym.Env.__init__(self)
 
-        self.get_logger().info("HRI Environment FINAL starting...")
+        self.get_logger().info("HRI Environment FINAL (Reward-Shaped) starting...")
 
+        # OBS = 6 joint pos + 6 joint vel + 3 EE pos + 3 target pos = 18
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(18,), dtype=np.float32
         )
-        self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(6,), dtype=np.float32
-        )
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
 
+        # ROS
         self.joint_sub = self.create_subscription(
             JointState, "/joint_states", self.joint_cb, 10
         )
@@ -48,6 +49,7 @@ class HriEnv(Node, gym.Env):
             JointTrajectory, "/joint_trajectory_controller/joint_trajectory", 10
         )
 
+        # State vars
         self.last_pos = None
         self.last_vel = None
         self.last_target = None
@@ -69,9 +71,12 @@ class HriEnv(Node, gym.Env):
 
         self.episode_count = 0
 
+    # -----------------------------------------------------
+    # CALLBACKS
+    # -----------------------------------------------------
+
     def joint_cb(self, msg):
-        pos = []
-        vel = []
+        pos, vel = [], []
         dpos = dict(zip(msg.name, msg.position))
         dvel = dict(zip(msg.name, msg.velocity))
 
@@ -84,11 +89,18 @@ class HriEnv(Node, gym.Env):
         self.state_received = True
 
     def target_cb(self, msg):
-        self.last_target = np.array([
-            msg.pose.position.x,
-            msg.pose.position.y,
-            msg.pose.position.z
-        ], dtype=np.float32)
+        self.last_target = np.array(
+            [
+                msg.pose.position.x,
+                msg.pose.position.y,
+                msg.pose.position.z,
+            ],
+            dtype=np.float32,
+        )
+
+    # -----------------------------------------------------
+    # ACTION → TRAJECTORY
+    # -----------------------------------------------------
 
     def _publish_action(self, action):
         scaled = action * MAX_VEL
@@ -96,6 +108,7 @@ class HriEnv(Node, gym.Env):
 
         traj = JointTrajectory()
         traj.joint_names = UR5_JOINTS
+
         p = JointTrajectoryPoint()
         p.positions = new_pos
         p.time_from_start = Duration(sec=0, nanosec=int(self.timer_period * 1e9))
@@ -103,52 +116,81 @@ class HriEnv(Node, gym.Env):
 
         self.cmd_pub.publish(traj)
 
+    # -----------------------------------------------------
+    # STEP
+    # -----------------------------------------------------
+
     def step(self, action):
         if self.last_pos is None or self.last_target is None:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        # Smooth action
-        action = 0.7 * action + 0.3 * self.prev_action
+        # Smooth action (important for stability)
+        old_action = self.prev_action.copy()
+        action = 0.7 * action + 0.3 * old_action
         self.prev_action = action
 
+        # Apply action
         self._publish_action(action)
 
-        # Wait until next state
+        # Wait for robot to move
         end_time = self.get_clock().now().nanoseconds + int(self.timer_period * 1e9)
         while self.get_clock().now().nanoseconds < end_time:
             rclpy.spin_once(self, timeout_sec=0.01)
 
+        # FK to compute real EE position
         ee = self.fk.compute_fk(self.last_pos)
 
-        obs = np.concatenate([
-            self.last_pos,
-            self.last_vel,
-            ee,
-            self.last_target
-        ])
+        # Build observation
+        obs = np.concatenate([self.last_pos, self.last_vel, ee, self.last_target])
+
+        # ----------------------------
+        # REWARD SHAPING
+        # ----------------------------
 
         dist = np.linalg.norm(ee - self.last_target)
+       
+        # Exponential distance reward (0 → 1)
+        reward_dist = float(np.exp(-4.0 * dist))
+        if self.current_step % 20 == 0:
+            self.get_logger().info(f"dist = {dist:.3f}, reward = {reward_dist:.3f}")
 
-        action_penalty = 0.01 * np.sum(np.square(action))
-        smooth_penalty = 0.02 * np.sum(np.square(action - self.prev_action))
+        # Penalize large velocities
+        action_penalty = 0.002 * np.sum(np.square(action))
 
-        reward = -dist - action_penalty - smooth_penalty
+        # Penalize jerky motion
+        smooth_penalty = 0.002 * np.sum(
+            np.square(action - old_action)
+        )
 
+        reward = reward_dist - action_penalty - smooth_penalty
+
+        # Success bonus
+        terminated = False
+        if dist < 0.05:
+            reward += 2.0
+            terminated = True
+
+        # Logging & episode end
         self.episode_reward += reward
         self.current_step += 1
 
-        terminated = False
         truncated = (self.current_step >= 200)
 
-        if truncated:
+        if terminated or truncated:
             with open(self.log_path, "a") as f:
                 writer = csv.writer(f)
                 writer.writerow([self.episode_count, self.episode_reward])
 
-            self.get_logger().info(f"Episode finished. Total reward: {self.episode_reward:.3f}")
+            self.get_logger().info(
+                f"Episode {self.episode_count} finished | reward = {self.episode_reward:.3f}"
+            )
             self.episode_count += 1
 
         return obs.astype(np.float32), reward, terminated, truncated, {}
+
+    # -----------------------------------------------------
+    # RESET
+    # -----------------------------------------------------
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -162,12 +204,6 @@ class HriEnv(Node, gym.Env):
 
         ee = self.fk.compute_fk(self.last_pos)
 
-        obs = np.concatenate([
-            self.last_pos,
-            self.last_vel,
-            ee,
-            self.last_target
-        ])
-
+        obs = np.concatenate([self.last_pos, self.last_vel, ee, self.last_target])
         return obs.astype(np.float32), {}
 
