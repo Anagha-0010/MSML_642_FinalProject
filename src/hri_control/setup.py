@@ -20,6 +20,10 @@ setup(
         # URDF models
         (os.path.join('share', package_name, 'models'),
             glob('models/*.urdf')),
+        
+        (os.path.join('share', package_name, 'urdf'),
+ 	     glob('urdf/*.xacro')),
+
 
         # Visual meshes
         (os.path.join('share', package_name, 'models/meshes/visual'),

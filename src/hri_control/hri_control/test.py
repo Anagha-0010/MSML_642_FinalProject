@@ -1,51 +1,44 @@
-# This file is test.py
-# It loads a pre-trained model and runs it in inference mode.
+# test.py
 
 import rclpy
-from hri_control.hri_env import HriEnv  # Import our custom environment
+from hri_control.hri_env_final import HriEnv
 from stable_baselines3 import SAC
 import time
 
-# --- DEFINE MODEL PATH ---
-# Point this to your best checkpoint from the folder
-MODEL_PATH = "./sac_hri_checkpoints/rl_model_100000_steps.zip"
+MODEL_PATH = "/home/anagha/MSML_642_FinalProject/checkpoints/sac_hri_250000_steps.zip"
 
-def main(args=None):
-    # Initialize ROS2
-    rclpy.init(args=args)
+def main():
+    rclpy.init()
 
-    print("--- HRI Testing Script Started ---")
+    print("\n==============================")
+    print("   HRI TESTING AGENT STARTED")
+    print("==============================\n")
 
-    # --- 1. Create the Environment ---
-    print("Creating HRI Environment...")
     env = HriEnv()
-    
-    # --- 2. Load the Trained Model ---
-    print(f"Loading trained model from {MODEL_PATH}...")
-    model = SAC.load(MODEL_PATH, env=env)
+
+    print(f"Loading model from: {MODEL_PATH}")
+    model = SAC.load(MODEL_PATH)     # <-- IMPORTANT: DO NOT pass env here
     print("Model loaded.")
 
-    # --- 3. Run the Model (No Training) ---
     obs, _ = env.reset()
-    print("--- Running trained agent ---")
-    
-    # Loop forever, running the policy
+    step = 0
+
     while rclpy.ok():
-        # model.predict() gets the best action from the policy
-        # deterministic=True means it won't explore, just pick the best move
-        action, _states = model.predict(obs, deterministic=True)
-        
-        # Take the action in the environment
+
+        action, _ = model.predict(obs, deterministic=True)
+
         obs, reward, terminated, truncated, info = env.step(action)
-        
+
+        print(f"[Step {step}] Dist = {info.get('dist')} | Reward = {reward:.3f}")
+        step += 1
+
         if terminated or truncated:
-            print("Episode finished. Resetting...")
+            print("\n--- Episode finished. Resetting... ---\n")
             obs, _ = env.reset()
 
-    # --- 4. Clean Up ---
-    print("Shutting down...")
     env.close()
     rclpy.shutdown()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
+

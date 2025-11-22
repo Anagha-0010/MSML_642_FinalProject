@@ -5,7 +5,8 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
-    AppendEnvironmentVariable
+    AppendEnvironmentVariable,
+    TimerAction
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
@@ -16,20 +17,15 @@ from launch.substitutions import (
 )
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
-import xacro
 
 
 def generate_launch_description():
 
     # -------------------------------
-    # 1. Declare Launch Arguments
+    # Arguments
     # -------------------------------
     declared_arguments = [
-        DeclareLaunchArgument(
-            "ur_type",
-            default_value="ur5e",
-            description="Type of UR robot"
-        ),
+        DeclareLaunchArgument("ur_type", default_value="ur5e"),
         DeclareLaunchArgument("safety_limits", default_value="true"),
         DeclareLaunchArgument("safety_pos_margin", default_value="0.15"),
         DeclareLaunchArgument("safety_k_position", default_value="20"),
@@ -43,14 +39,14 @@ def generate_launch_description():
     prefix = LaunchConfiguration("prefix")
 
     # -------------------------------
-    # 2. Locate Packages
+    # Locate packages
     # -------------------------------
     pkg_gazebo_ros = get_package_share_directory("gazebo_ros")
     pkg_ur_description = get_package_share_directory("ur_description")
     pkg_hri_control = get_package_share_directory("hri_control")
 
     # -------------------------------
-    # 3. Gazebo model & plugin paths
+    # Gazebo model paths
     # -------------------------------
     ur_description_path = os.path.join(pkg_ur_description, "..")
     hri_models_path = os.path.join(pkg_hri_control, "models")
@@ -65,23 +61,23 @@ def generate_launch_description():
         os.path.join(pkg_gazebo_ros, "lib")
     )
 
-    # Controller parameters
+    # Controller config
     ur_controller_params_path = os.path.join(
         pkg_hri_control, "config", "ur_simple_controllers.yaml"
     )
 
-    # Path to URDF control xacro
+    # xacro control file
     ur_control_xacro = os.path.join(
         pkg_ur_description, "urdf", "ur_ros2_control.xacro"
     )
 
-    # -------------------------------------
-    # 4. Generate UR Robot Description
-    # -------------------------------------
+    # -------------------------------
+    # Generate UR robot_description
+    # -------------------------------
     ur_robot_description_content = ParameterValue(
         Command([
             FindExecutable(name="xacro"), " ",
-            PathJoinSubstitution([pkg_ur_description, "urdf", "ur.urdf.xacro"]),
+            PathJoinSubstitution([pkg_hri_control, "urdf", "ur_on_base.xacro"]),
             " ", "name:=ur",
             " ", "ur_type:=", ur_type,
             " ", "sim_gazebo:=true",
@@ -91,14 +87,14 @@ def generate_launch_description():
             " ", "prefix:=", prefix,
             " ", "safety_limits:=", safety_limits,
             " ", "safety_pos_margin:=", safety_pos_margin,
-            " ", "safety_k_position:=", safety_k_position
+            " ", "safety_k_position:=", safety_k_position,
         ]),
         value_type=str
     )
 
     ur_robot_description = {"robot_description": ur_robot_description_content}
 
-    # UR State Publisher
+    # State publisher
     ur_robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -106,18 +102,15 @@ def generate_launch_description():
         output="screen",
     )
 
-    # UR Spawner
+    # Spawn robot
     ur_spawn_robot = Node(
         package="gazebo_ros",
         executable="spawn_entity.py",
-        arguments=[
-            "-topic", "robot_description",
-            "-entity", "ur"
-        ],
+        arguments=["-topic", "robot_description", "-entity", "ur"],
         output="screen"
     )
 
-    # UR Controllers
+    # Controllers
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -139,10 +132,8 @@ def generate_launch_description():
     )
 
     # -------------------------------
-    # 5. Launch Gazebo with world file
+    # Gazebo world
     # -------------------------------
-    world_path = os.path.join(pkg_hri_control, "worlds", "hri_world.world")
-
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_gazebo_ros, "launch", "gazebo.launch.py")
@@ -151,23 +142,31 @@ def generate_launch_description():
             "verbose": "true",
             "paused": "false",
             "use_sim_time": "true",
-            'world': os.path.join(pkg_hri_control, 'worlds', 'hri_world.world')
-
+            "world": os.path.join(pkg_hri_control, "worlds", "hri_world.world")
         }.items()
     )
 
     # -------------------------------
-    # 6. Combine Everything
+    # 💥 Delay robot spawn (fix falling)
+    # -------------------------------
+    delayed_robot_spawn = TimerAction(
+        period=3.0,  # wait 3 seconds
+        actions=[
+            ur_robot_state_publisher,
+            ur_spawn_robot,
+            joint_state_broadcaster_spawner,
+            joint_trajectory_controller_spawner
+        ]
+    )
+
+    # -------------------------------
+    # Launch Description
     # -------------------------------
     nodes_to_launch = [
         set_model_path,
         export_api_plugin,
         gazebo,
-
-        ur_robot_state_publisher,
-        ur_spawn_robot,
-        joint_state_broadcaster_spawner,
-        joint_trajectory_controller_spawner
+        delayed_robot_spawn
     ]
 
     return LaunchDescription(declared_arguments + nodes_to_launch)

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<robot name="ur_on_base" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- Include the original UR description -->
+  <xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
+
+  <!-- Instantiate the UR robot.
+       NOTE: If your macro name is different (e.g. ur5e_robot), we'll tweak this line. -->
+  <xacro:ur_robot
+    name="ur"
+    ur_type="ur5e"
+    prefix=""
+    sim_gazebo="true"
+    use_fake_hardware="false"
+    safety_limits="true"
+    safety_pos_margin="0.15"
+    safety_k_position="20" />
+
+  <!-- Pin the base so gravity doesn't make the whole robot fall -->
+  <gazebo reference="base_link">
+    <gravity>false</gravity>
+  </gazebo>
+
+</robot>
+

@@ -69,8 +69,9 @@ def main():
     # TRAINING
     # -----------------------------
 
+    model = SAC.load("checkpoints/sac_hri_250000_steps.zip", env=env)
     model.learn(
-        total_timesteps=400000,   # longer training for stability
+        total_timesteps=250000,   # longer training for stability
         callback=callback
     )
 
