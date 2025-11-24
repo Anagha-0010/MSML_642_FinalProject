@@ -22,7 +22,7 @@ setup(
             glob('models/*.urdf')),
         
         (os.path.join('share', package_name, 'urdf'),
- 	     glob('urdf/*.xacro')),
+ 	     glob('urdf/*')),
 
 
         # Visual meshes

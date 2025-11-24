@@ -1,22 +1,38 @@
 <?xml version="1.0"?>
-<robot name="ur_on_base" xmlns:xacro="http://ros.org/wiki/xacro">
+<robot name="ur_on_base" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- Include the original UR description -->
+  <!-- Declare Xacro args -->
+  <xacro:arg name="name" default="ur"/>
+  <xacro:arg name="ur_type" default="ur5e"/>
+  <xacro:arg name="tf_prefix" default=""/>
+
+  <!-- YAML paths -->
+  <xacro:property name="joint_limit_params" value="$(find ur_description)/config/${ur_type}/joint_limits.yaml"/>
+  <xacro:property name="kinematics_params" value="$(find ur_description)/config/${ur_type}/default_kinematics.yaml"/>
+  <xacro:property name="physical_params" value="$(find ur_description)/config/${ur_type}/physical_parameters.yaml"/>
+  <xacro:property name="visual_params" value="$(find ur_description)/config/${ur_type}/visual_parameters.yaml"/>
+
+  <!-- Load UR description -->
   <xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
 
-  <!-- Instantiate the UR robot.
-       NOTE: If your macro name is different (e.g. ur5e_robot), we'll tweak this line. -->
+  <!-- Instantiate the UR robot -->
   <xacro:ur_robot
-    name="ur"
-    ur_type="ur5e"
-    prefix=""
-    sim_gazebo="true"
-    use_fake_hardware="false"
-    safety_limits="true"
-    safety_pos_margin="0.15"
-    safety_k_position="20" />
+      name="${name}"
+      ur_type="${ur_type}"
+      tf_prefix="${tf_prefix}"
+      joint_limit_params="${joint_limit_params}"
+      kinematics_params="${kinematics_params}"
+      physical_params="${physical_params}"
+      visual_params="${visual_params}"
+      sim_gazebo="true"
+      use_fake_hardware="false"
+      safety_limits="true"
+      safety_pos_margin="0.15"
+      safety_k_position="20">
 
-  <!-- Pin the base so gravity doesn't make the whole robot fall -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:ur_robot>
+
   <gazebo reference="base_link">
     <gravity>false</gravity>
   </gazebo>

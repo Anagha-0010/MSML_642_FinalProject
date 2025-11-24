@@ -26,13 +26,14 @@ MAX_VEL = 0.4
 
 
 class HriEnv(Node, gym.Env):
+
     def __init__(self):
         super().__init__("hri_env_node")
         gym.Env.__init__(self)
 
         self.get_logger().info("HRI Environment FINAL (Reward-Shaped) starting...")
 
-        # OBS = 6 joint pos + 6 joint vel + 3 EE pos + 3 target pos = 18
+        # Observation: 6 joint pos + 6 vel + 3 EE pos + 3 target pos = 18
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(18,), dtype=np.float32
         )
@@ -111,7 +112,10 @@ class HriEnv(Node, gym.Env):
 
         p = JointTrajectoryPoint()
         p.positions = new_pos
-        p.time_from_start = Duration(sec=0, nanosec=int(self.timer_period * 1e9))
+        p.time_from_start = Duration(
+            sec=0,
+            nanosec=int(self.timer_period * 1e9)
+        )
         traj.points.append(p)
 
         self.cmd_pub.publish(traj)
@@ -121,60 +125,54 @@ class HriEnv(Node, gym.Env):
     # -----------------------------------------------------
 
     def step(self, action):
+
         if self.last_pos is None or self.last_target is None:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        # Smooth action (important for stability)
+        # Smooth the action
         old_action = self.prev_action.copy()
         action = 0.7 * action + 0.3 * old_action
         self.prev_action = action
 
-        # Apply action
+        # Apply action to robot
         self._publish_action(action)
 
-        # Wait for robot to move
+        # Allow robot movement
         end_time = self.get_clock().now().nanoseconds + int(self.timer_period * 1e9)
         while self.get_clock().now().nanoseconds < end_time:
             rclpy.spin_once(self, timeout_sec=0.01)
 
-        # FK to compute real EE position
+        # Compute FK
         ee = self.fk.compute_fk(self.last_pos)
 
         # Build observation
         obs = np.concatenate([self.last_pos, self.last_vel, ee, self.last_target])
 
-        # ----------------------------
-        # REWARD SHAPING
-        # ----------------------------
-
-        dist = np.linalg.norm(ee - self.last_target)
-       
-        # Exponential distance reward (0 → 1)
+        # Compute reward
+        dist = float(np.linalg.norm(ee - self.last_target))
         reward_dist = float(np.exp(-4.0 * dist))
+
         if self.current_step % 20 == 0:
             self.get_logger().info(f"dist = {dist:.3f}, reward = {reward_dist:.3f}")
 
-        # Penalize large velocities
         action_penalty = 0.002 * np.sum(np.square(action))
-
-        # Penalize jerky motion
-        smooth_penalty = 0.002 * np.sum(
-            np.square(action - old_action)
-        )
+        smooth_penalty = 0.002 * np.sum(np.square(action - old_action))
 
         reward = reward_dist - action_penalty - smooth_penalty
 
-        # Success bonus
-        terminated = False
-        if dist < 0.05:
-            reward += 2.0
-            terminated = True
+        # Episode termination
+        terminated = dist < 0.05
+        truncated = self.current_step >= 200
 
-        # Logging & episode end
+        # Info dict
+        info = {
+            "dist": dist,
+            "ee": ee.tolist(),
+            "target": self.last_target.tolist(),
+        }
+
         self.episode_reward += reward
         self.current_step += 1
-
-        truncated = (self.current_step >= 200)
 
         if terminated or truncated:
             with open(self.log_path, "a") as f:
@@ -186,7 +184,7 @@ class HriEnv(Node, gym.Env):
             )
             self.episode_count += 1
 
-        return obs.astype(np.float32), reward, terminated, truncated, {}
+        return obs.astype(np.float32), reward, terminated, truncated, info
 
     # -----------------------------------------------------
     # RESET
@@ -199,7 +197,7 @@ class HriEnv(Node, gym.Env):
         self.episode_reward = 0.0
         self.prev_action = np.zeros(6)
 
-        while (self.last_pos is None or self.last_target is None):
+        while self.last_pos is None or self.last_target is None:
             rclpy.spin_once(self, timeout_sec=0.1)
 
         ee = self.fk.compute_fk(self.last_pos)

@@ -35,6 +35,7 @@ def main():
         if terminated or truncated:
             print("\n--- Episode finished. Resetting... ---\n")
             obs, _ = env.reset()
+      
 
     env.close()
     rclpy.shutdown()

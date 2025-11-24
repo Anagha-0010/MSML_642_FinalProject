@@ -77,7 +77,7 @@ def generate_launch_description():
     ur_robot_description_content = ParameterValue(
         Command([
             FindExecutable(name="xacro"), " ",
-            PathJoinSubstitution([pkg_hri_control, "urdf", "ur_on_base.xacro"]),
+            os.path.join(pkg_ur_description, "urdf", "ur.urdf.xacro"),
             " ", "name:=ur",
             " ", "ur_type:=", ur_type,
             " ", "sim_gazebo:=true",
