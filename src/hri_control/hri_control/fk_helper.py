@@ -134,5 +134,11 @@ class FKWrapper:
         frame = kdl.Frame()
         self.fk_solver.JntToCart(q, frame)
 
-        return np.array([frame.p.x(), frame.p.y(), frame.p.z()], dtype=np.float32)
+        # --- CHANGED: Get Quaternion (x, y, z, w) ---
+        rx, ry, rz, rw = frame.M.GetQuaternion()
 
+        # Return Pos (3) + Rot (4) = 7 items total
+        return np.array([
+            frame.p.x(), frame.p.y(), frame.p.z(),
+            rx, ry, rz, rw
+        ], dtype=np.float32)

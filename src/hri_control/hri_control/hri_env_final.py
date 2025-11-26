@@ -33,9 +33,9 @@ class HriEnv(Node, gym.Env):
 
         self.get_logger().info("HRI Environment FINAL (Reward-Shaped) starting...")
 
-        # Observation: 6 joint pos + 6 vel + 3 EE pos + 3 target pos = 18
+        # Observation: 6 joint pos + 6 vel + 7 EE pose (pos+rot) + 7 target (pos+rot) = 26
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(18,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(26,), dtype=np.float32
         )
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
 
@@ -62,6 +62,7 @@ class HriEnv(Node, gym.Env):
         self.timer_period = 0.1
         self.current_step = 0
         self.episode_reward = 0.0
+        self.prev_dist = 0.0 # Initialize
 
         # CSV logging
         self.log_path = os.path.expanduser("~/hri_reward_log.csv")
@@ -90,17 +91,22 @@ class HriEnv(Node, gym.Env):
         self.state_received = True
 
     def target_cb(self, msg):
+        # Now captures Position (3) + Orientation (4) = 7 items
         self.last_target = np.array(
             [
                 msg.pose.position.x,
                 msg.pose.position.y,
                 msg.pose.position.z,
+                msg.pose.orientation.x,
+                msg.pose.orientation.y,
+                msg.pose.orientation.z,
+                msg.pose.orientation.w,
             ],
             dtype=np.float32,
         )
 
     # -----------------------------------------------------
-    # ACTION → TRAJECTORY
+    # ACTION -> TRAJECTORY
     # -----------------------------------------------------
 
     def _publish_action(self, action):
@@ -125,64 +131,81 @@ class HriEnv(Node, gym.Env):
     # -----------------------------------------------------
 
     def step(self, action):
-
         if self.last_pos is None or self.last_target is None:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        # Smooth the action
+        # 1. Action Smoothing
         old_action = self.prev_action.copy()
-        action = 0.7 * action + 0.3 * old_action
+        action = 0.2 * action + 0.8 * old_action
         self.prev_action = action
 
-        # Apply action to robot
+        # Apply action
         self._publish_action(action)
 
-        # Allow robot movement
+        # Wait for physics
         end_time = self.get_clock().now().nanoseconds + int(self.timer_period * 1e9)
         while self.get_clock().now().nanoseconds < end_time:
             rclpy.spin_once(self, timeout_sec=0.01)
 
-        # Compute FK
-        ee = self.fk.compute_fk(self.last_pos)
+        # 2. Get State
+        ee_state = self.fk.compute_fk(self.last_pos)
+        ee_pos = ee_state[:3]
+        ee_quat = ee_state[3:]
 
-        # Build observation
-        obs = np.concatenate([self.last_pos, self.last_vel, ee, self.last_target])
+        target_pos = self.last_target[:3]
+        target_quat = self.last_target[3:]
+        
+        # Calculate Distances
+        dist = float(np.linalg.norm(ee_pos - target_pos))
+        
+        # Calculate Distance Change (Shaping Reward)
+        # Use the value calculated in reset() or previous step
+        delta_dist = self.prev_dist - dist
+        self.prev_dist = dist
 
-        # Compute reward
-        dist = float(np.linalg.norm(ee - self.last_target))
-        reward_dist = float(np.exp(-4.0 * dist))
+        # Build Observation
+        obs = np.concatenate([self.last_pos, self.last_vel, ee_state, self.last_target])
 
+        # Reward function
+
+        #Distance Reward
+        r_dist = float(np.exp(-1.0 * dist))
+
+        #Progress Reward
+        r_progress = 10.0 * delta_dist 
+
+        #Orientation Reward
+        dot_prod = np.dot(ee_quat, target_quat)
+        r_orient = float(dot_prod ** 2)
+
+        #Penalties
+        action_penalty = 0.01 * np.sum(np.square(action))
+        smooth_penalty = 0.01 * np.sum(np.square(action - old_action))
+
+        #Total reward
+        #Weights: Distance(2.0) + Progress(1.0) + Orientation(0.5)
+        reward = (2.0 * r_dist) + r_progress + (0.5 * r_orient) - action_penalty - smooth_penalty
+
+        # Logging
         if self.current_step % 20 == 0:
-            self.get_logger().info(f"dist = {dist:.3f}, reward = {reward_dist:.3f}")
+            self.get_logger().info(f"Dist: {dist:.3f} | Prog: {r_progress:.3f} | Rew: {reward:.3f}")
 
-        action_penalty = 0.002 * np.sum(np.square(action))
-        smooth_penalty = 0.002 * np.sum(np.square(action - old_action))
-
-        reward = reward_dist - action_penalty - smooth_penalty
-
-        # Episode termination
-        terminated = dist < 0.05
+        # Termination
+        terminated = dist < 0.05 and r_orient > 0.9
         truncated = self.current_step >= 200
-
-        # Info dict
-        info = {
-            "dist": dist,
-            "ee": ee.tolist(),
-            "target": self.last_target.tolist(),
-        }
 
         self.episode_reward += reward
         self.current_step += 1
+        
+        info = {"dist": dist}
 
         if terminated or truncated:
             with open(self.log_path, "a") as f:
                 writer = csv.writer(f)
                 writer.writerow([self.episode_count, self.episode_reward])
-
-            self.get_logger().info(
-                f"Episode {self.episode_count} finished | reward = {self.episode_reward:.3f}"
-            )
+            self.get_logger().info(f"Episode {self.episode_count} done | Reward: {self.episode_reward:.3f}")
             self.episode_count += 1
+            # Note: prev_dist reset is now handled in reset(), not here.
 
         return obs.astype(np.float32), reward, terminated, truncated, info
 
@@ -200,8 +223,13 @@ class HriEnv(Node, gym.Env):
         while self.last_pos is None or self.last_target is None:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        ee = self.fk.compute_fk(self.last_pos)
+        ee_state = self.fk.compute_fk(self.last_pos)
+        ee_pos = ee_state[:3]
+        
+        # --- FIX: Initialize prev_dist correctly for the new episode ---
+        target_pos = self.last_target[:3]
+        self.prev_dist = float(np.linalg.norm(ee_pos - target_pos))
+        # ---------------------------------------------------------------
 
-        obs = np.concatenate([self.last_pos, self.last_vel, ee, self.last_target])
+        obs = np.concatenate([self.last_pos, self.last_vel, ee_state, self.last_target])
         return obs.astype(np.float32), {}
-

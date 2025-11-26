@@ -28,7 +28,7 @@ def main():
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
         save_path="./checkpoints/",
-        name_prefix="sac_hri"
+        name_prefix="sac_hri_fresh_again"  # Changed name to avoid overwriting old files
     )
 
     # Evaluation env (no exploration noise)
@@ -47,21 +47,24 @@ def main():
     callback = CallbackList([checkpoint_callback, eval_callback])
 
     # -----------------------------
-    # SAC Hyperparameters
+    # SAC Hyperparameters (FRESH START)
     # -----------------------------
 
-    model = SAC(
-        "MlpPolicy",
-        env,
-        verbose=1,
-        buffer_size=300000,      # large replay memory
-        batch_size=256,          # strong for control tasks
-        learning_rate=3e-4,      # stable value for SAC
-        gamma=0.99,              # discount factor
-        tau=0.005,               # soft update
-        train_freq=1,            # update every step
-        gradient_steps=1,        # 1 update per environment step
-        ent_coef="auto",         # automatic entropy tuning
+    print("Initializing NEW model (Fresh Start)...")
+    model_path = "./checkpoints/sac_hri_fresh_200000_steps.zip"
+    model = SAC.load(
+        model_path,
+        env=env,
+        print_system_info=True,
+        #verbose=1,
+        #buffer_size=300000,      
+        #batch_size=256,         
+        #learning_rate=3e-4,      
+        #gamma=0.99,              
+        #tau=0.005,               
+        #train_freq=1,            
+        #gradient_steps=1,        
+        #ent_coef="auto",         
         tensorboard_log="./sac_hri_tensorboard/"
     )
 
@@ -69,13 +72,15 @@ def main():
     # TRAINING
     # -----------------------------
 
-    model = SAC.load("checkpoints/sac_hri_250000_steps.zip", env=env)
+    print("Starting training for 500,000 steps...")
+    
     model.learn(
-        total_timesteps=250000,   # longer training for stability
-        callback=callback
+        total_timesteps=500000,   # Sufficient time to learn the new reward
+        callback=callback,
+        reset_num_timesteps=False
     )
 
-    model.save("sac_hri_final")
+    model.save("sac_hri_final_fresh")
 
     # Shutdown ROS2
     rclpy.shutdown()
@@ -83,4 +88,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
