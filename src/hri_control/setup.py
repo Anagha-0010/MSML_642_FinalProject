@@ -54,6 +54,8 @@ setup(
             'test = hri_control.test:main',
             'hand_simulator = hri_control.hand_simulator:main',
             'hand_mover = hri_control.hand_mover:main',
+            'test_ppo = hri_control.test_ppo:main',
+            'visualize_results = hri_control.visualize_results:main',
         ],
     },
 )
