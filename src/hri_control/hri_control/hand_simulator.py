@@ -40,15 +40,15 @@ class HandSimulatorNode(Node):
 
         # Flags to avoid moving nonexistent models
         self.hand_spawned = False
-        self.obj_spawned = False
+        # self.obj_spawned = False  <-- DISABLED: We don't want the floating cube anymore
 
-        # Spawn both models
+        # Spawn only the hand
         self.spawn_hand()
-        self.spawn_object()
+        # self.spawn_object()       <-- DISABLED
 
-        # Timer (but animation waits until models exist)
+        # Timer (50 Hz update rate)
         self.start_time = self.get_clock().now().nanoseconds * 1e-9
-        self.timer = self.create_timer(0.02, self.animate)  # 50 Hz
+        self.timer = self.create_timer(0.02, self.animate)
 
     # ---------------------------------------------------------
     # SPAWN HAND MODEL
@@ -79,56 +79,11 @@ class HandSimulatorNode(Node):
             self.get_logger().error(f"HAND spawn callback error: {e}")
 
     # ---------------------------------------------------------
-    # SPAWN OBJECT IN HAND
-    # ---------------------------------------------------------
-    def spawn_object(self):
-        # Tiny cube the human is "holding"
-        cube_sdf = """
-        <?xml version="1.0" ?>
-        <sdf version="1.6">
-          <model name="handover_object">
-            <static>false</static>
-            <link name="obj_link">
-              <visual name="obj_visual">
-                <geometry>
-                  <box><size>0.03 0.03 0.03</size></box>
-                </geometry>
-                <material>
-                  <ambient>0.9 0 0 1</ambient>
-                </material>
-              </visual>
-            </link>
-          </model>
-        </sdf>
-        """
-
-        req = SpawnEntity.Request()
-        req.name = "handover_object"
-        req.xml = cube_sdf
-        req.initial_pose.position.x = 0.3
-        req.initial_pose.position.y = 0.25
-        req.initial_pose.position.z = 0.40
-
-        future = self.spawn_client.call_async(req)
-        future.add_done_callback(self.obj_spawn_callback)
-
-    def obj_spawn_callback(self, future):
-        try:
-            result = future.result()
-            if result.success:
-                self.get_logger().info("OBJECT cube successfully spawned!")
-                self.obj_spawned = True
-            else:
-                self.get_logger().error(f"OBJECT spawn failed: {result.status_message}")
-        except Exception as e:
-            self.get_logger().error(f"OBJECT spawn callback error: {e}")
-
-    # ---------------------------------------------------------
-    # MAIN ANIMATION LOOP
+    # MAIN ANIMATION LOOP (SLOW MOTION)
     # ---------------------------------------------------------
     def animate(self):
-        # Avoid moving nonexistent models
-        if not (self.hand_spawned and self.obj_spawned):
+        # Only proceed if the hand exists
+        if not self.hand_spawned:
             return
 
         t = (self.get_clock().now().nanoseconds * 1e-9) - self.start_time
@@ -141,54 +96,54 @@ class HandSimulatorNode(Node):
         base_y = 0.25
         base_z = 0.35
 
-        phase = t % 8.0
+        # --- SLOW MODE: 16 Second Cycle (Doubled from 8s) ---
+        cycle_duration = 16.0
+        phase = t % cycle_duration
         z = base_z
 
-        if phase < 2.0:
-            # Extending
-            progress = phase / 2.0
+        if phase < 4.0: 
+            # Extending (0-4s)
+            progress = phase / 4.0
             alpha = 0.5 * (1 - np.cos(np.pi * progress))
             x = start_x + alpha * (offer_x - start_x)
             y = base_y
             wrist_rot = 0.0
 
-        elif phase < 4.0:
-            # Holding
+        elif phase < 8.0: 
+            # Holding (4-8s)
             x = offer_x
             y = base_y
             z = base_z
             wrist_rot = 0.1
 
-        elif phase < 6.0:
-            # Invitation shake
+        elif phase < 12.0: 
+            # Invitation shake (8-12s) - Slower frequency
             x = offer_x
-            y = base_y + 0.02 * np.sin(3 * (phase - 4))
-            wrist_rot = 0.10 * np.sin(2 * (phase - 4))
-            z = base_z + 0.01 * np.sin(1.5 * (phase - 4))
+            y = base_y + 0.02 * np.sin(1.5 * (phase - 8)) 
+            wrist_rot = 0.10 * np.sin(1.0 * (phase - 8))
+            z = base_z + 0.01 * np.sin(0.75 * (phase - 8))
 
-        else:
-            # Retracting
-            progress = (phase - 6.0) / 2.0
+        else: 
+            # Retracting (12-16s)
+            progress = (phase - 12.0) / 4.0
             alpha = 0.5 * (1 - np.cos(np.pi * progress))
             x = offer_x - alpha * (offer_x - start_x)
             y = base_y
             wrist_rot = 0.0
         
-        if phase < 2.0 or phase >= 6.0:
+        # Add slight arc to Z motion
+        if phase < 4.0 or phase >= 12.0:
             z = base_z + 0.02 * np.sin(alpha * np.pi)
 
         # ---------------------------------------
-        # Natural handover orientation:
-        # - yaw: face the robot
-        # - pitch: 30° upward tilt (palm up)
-        # - roll: 90° + small wrist oscillation
+        # Orientation Logic
         # ---------------------------------------
         yaw = np.pi
         pitch = 0.52           # ~30 degrees
-        roll = 1.57 + wrist_rot  # 90° plus wrist motion
+        roll = 1.57 + wrist_rot 
 
         # -------------------------
-        # Euler → Quaternion
+        # Euler -> Quaternion
         # -------------------------
         cy = np.cos(yaw * 0.5)
         sy = np.sin(yaw * 0.5)
@@ -216,18 +171,6 @@ class HandSimulatorNode(Node):
         hand_state.pose.orientation.z = q_z
 
         self.move_client.call_async(SetEntityState.Request(state=hand_state))
-
-        # -------------------------
-        # MOVE OBJECT (offset in palm)
-        # -------------------------
-        obj = EntityState()
-        obj.name = "handover_object"
-        obj.pose.position.x = x + 0.03   # slightly toward fingers
-        obj.pose.position.y = y
-        obj.pose.position.z = z + 0.025  # resting on the palm
-        obj.pose.orientation = hand_state.pose.orientation
-
-        self.move_client.call_async(SetEntityState.Request(state=obj))
 
         # -------------------------
         # RVIZ MARKER
@@ -266,4 +209,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
