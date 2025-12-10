@@ -16,43 +16,35 @@ class HandSimulatorNode(Node):
     def __init__(self):
         super().__init__("hand_simulator_node")
 
-        # ------------------------------
-        # Publishers
-        # ------------------------------
+       #Publisher
         self.pose_pub = self.create_publisher(PoseStamped, "/target_pose", 10)
         self.marker_pub = self.create_publisher(Marker, "/target_hand_marker", 10)
-
-        # ------------------------------
-        # Gazebo service clients
-        # ------------------------------
+        
+        #Calling the gazebo clients
         self.spawn_client = self.create_client(SpawnEntity, "/spawn_entity")
         self.move_client = self.create_client(SetEntityState, "/set_entity_state")
 
-        self.get_logger().info("Waiting for Gazebo services...")
+        self.get_logger().info("Waiting for Gazebo services")
 
         while not self.spawn_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting /spawn_entity...")
+            self.get_logger().info("Waiting /spawn_entity")
 
         while not self.move_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting /set_entity_state...")
+            self.get_logger().info("Waiting /set_entity_state")
 
         self.get_logger().info("All Gazebo services available!")
 
-        # Flags to avoid moving nonexistent models
         self.hand_spawned = False
-        # self.obj_spawned = False  <-- DISABLED: We don't want the floating cube anymore
+      
 
-        # Spawn only the hand
+        # Spawn the hand
         self.spawn_hand()
-        # self.spawn_object()       <-- DISABLED
+       
 
-        # Timer (50 Hz update rate)
         self.start_time = self.get_clock().now().nanoseconds * 1e-9
         self.timer = self.create_timer(0.02, self.animate)
 
-    # ---------------------------------------------------------
-    # SPAWN HAND MODEL
-    # ---------------------------------------------------------
+#spawn the hand model 
     def spawn_hand(self):
         pkg_share = ament_index_python.packages.get_package_share_directory("hri_control")
         hand_path = os.path.join(pkg_share, "models", "target_hand.urdf")
@@ -78,31 +70,24 @@ class HandSimulatorNode(Node):
         except Exception as e:
             self.get_logger().error(f"HAND spawn callback error: {e}")
 
-    # ---------------------------------------------------------
-    # MAIN ANIMATION LOOP (SLOW MOTION)
-    # ---------------------------------------------------------
+  #moving the hand to simulatean actual hand
     def animate(self):
-        # Only proceed if the hand exists
         if not self.hand_spawned:
             return
 
         t = (self.get_clock().now().nanoseconds * 1e-9) - self.start_time
 
-        # ----------------------
-        # Trajectory parameters
-        # ----------------------
+        #trajectory parameters
         start_x = 0.3
         offer_x = 0.6
         base_y = 0.25
         base_z = 0.35
 
-        # --- SLOW MODE: 16 Second Cycle (Doubled from 8s) ---
         cycle_duration = 16.0
         phase = t % cycle_duration
         z = base_z
 
         if phase < 4.0: 
-            # Extending (0-4s)
             progress = phase / 4.0
             alpha = 0.5 * (1 - np.cos(np.pi * progress))
             x = start_x + alpha * (offer_x - start_x)
@@ -110,14 +95,12 @@ class HandSimulatorNode(Node):
             wrist_rot = 0.0
 
         elif phase < 8.0: 
-            # Holding (4-8s)
             x = offer_x
             y = base_y
             z = base_z
             wrist_rot = 0.1
 
         elif phase < 12.0: 
-            # Invitation shake (8-12s) - Slower frequency
             x = offer_x
             y = base_y + 0.02 * np.sin(1.5 * (phase - 8)) 
             wrist_rot = 0.10 * np.sin(1.0 * (phase - 8))
@@ -131,20 +114,15 @@ class HandSimulatorNode(Node):
             y = base_y
             wrist_rot = 0.0
         
-        # Add slight arc to Z motion
         if phase < 4.0 or phase >= 12.0:
             z = base_z + 0.02 * np.sin(alpha * np.pi)
 
-        # ---------------------------------------
-        # Orientation Logic
-        # ---------------------------------------
+    #Orientation parameters
         yaw = np.pi
-        pitch = 0.52           # ~30 degrees
+        pitch = 0.52      
         roll = 1.57 + wrist_rot 
 
-        # -------------------------
-        # Euler -> Quaternion
-        # -------------------------
+        # Euler to Quaternion
         cy = np.cos(yaw * 0.5)
         sy = np.sin(yaw * 0.5)
         cr = np.cos(roll * 0.5)
@@ -157,9 +135,7 @@ class HandSimulatorNode(Node):
         q_y = cy * cr * sp + sy * sr * cp
         q_z = sy * cr * cp - cy * sr * sp
 
-        # -------------------------
-        # MOVE HAND
-        # -------------------------
+        #Moving hand
         hand_state = EntityState()
         hand_state.name = "target_hand"
         hand_state.pose.position.x = x
@@ -172,9 +148,7 @@ class HandSimulatorNode(Node):
 
         self.move_client.call_async(SetEntityState.Request(state=hand_state))
 
-        # -------------------------
-        # RVIZ MARKER
-        # -------------------------
+     #adding a marker to visualize it on rviz
         marker = Marker()
         marker.header.frame_id = "base_link"
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -189,9 +163,6 @@ class HandSimulatorNode(Node):
 
         self.marker_pub.publish(marker)
 
-        # -------------------------
-        # RL target pose
-        # -------------------------
         pose = PoseStamped()
         pose.header.frame_id = "base_link"
         pose.header.stamp = self.get_clock().now().to_msg()
