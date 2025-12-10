@@ -1,22 +1,13 @@
-# test.py
-
 import rclpy
 from hri_control.hri_env_final import HriEnv
 from stable_baselines3 import SAC
 import time
 
-# --- UPDATE THIS PATH ---
-# Use the final saved model from your recent 700k run
-MODEL_PATH = "sac_hri_final_fresh.zip" 
-# OR: "checkpoints/sac_hri_fresh_700000_steps.zip"
-# ------------------------
+MODEL_PATH = "sac_hri_final_final.zip" 
 
 def main():
     rclpy.init()
-
-    print("\n==============================")
     print("   HRI TESTING AGENT STARTED")
-    print("==============================\n")
 
     env = HriEnv()
 
