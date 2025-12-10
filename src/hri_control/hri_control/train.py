@@ -1,5 +1,3 @@
-# train.py
-
 import rclpy
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import (
@@ -8,30 +6,19 @@ from stable_baselines3.common.callbacks import (
     CallbackList,
 )
 from stable_baselines3.common.monitor import Monitor
-
 from hri_control.hri_env_final import HriEnv
 
-
+#creating environment and add checkpoits to ensure if the system crashes we can train it again from the last checkpoint
 def main():
-    # Initialize ROS2
     rclpy.init()
-
-    # Create environment
     env = HriEnv()
-    env = Monitor(env)   # adds episode logging
-
-    # -----------------------------
-    # CALLBACKS
-    # -----------------------------
-
-    # Save periodic checkpoints
+    env = Monitor(env)  
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
         save_path="./checkpoints/",
-        name_prefix="sac_hri_fresh_again"  # Changed name to avoid overwriting old files
+        name_prefix="sac_hri_final_final_again" 
     )
 
-    # Evaluation env (no exploration noise)
     eval_env = HriEnv()
     eval_env = Monitor(eval_env)
 
@@ -46,12 +33,9 @@ def main():
 
     callback = CallbackList([checkpoint_callback, eval_callback])
 
-    # -----------------------------
-    # SAC Hyperparameters (FRESH START)
-    # -----------------------------
-
-    print("Initializing NEW model (Fresh Start)...")
-    model_path = "./checkpoints/sac_hri_fresh_200000_steps.zip"
+#SAC Hyperparameters
+    print("Initializing model")
+    model_path = "./checkpoints/sac_hri_final_200000_steps.zip"
     model = SAC.load(
         model_path,
         env=env,
@@ -68,19 +52,15 @@ def main():
         tensorboard_log="./sac_hri_tensorboard/"
     )
 
-    # -----------------------------
-    # TRAINING
-    # -----------------------------
-
-    print("Starting training for 500,000 steps...")
+    print("Starting training")
     
     model.learn(
-        total_timesteps=500000,   # Sufficient time to learn the new reward
+        total_timesteps=700000,  
         callback=callback,
         reset_num_timesteps=False
     )
 
-    model.save("sac_hri_final_fresh")
+    model.save("sac_hri_final_final")
 
     # Shutdown ROS2
     rclpy.shutdown()
