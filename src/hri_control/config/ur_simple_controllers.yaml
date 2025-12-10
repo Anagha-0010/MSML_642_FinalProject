@@ -1,6 +1,6 @@
 controller_manager:
   ros__parameters:
-    update_rate: 100  # Hz
+    update_rate: 100 
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
@@ -35,7 +35,6 @@ joint_trajectory_controller:
       - position
       - velocity
     
-    # --- FIX 1: DISABLE CONSTRAINTS (Set to 0) ---
     constraints:
       goal_time: 0.0
       stopped_velocity_tolerance: 0.0
@@ -46,7 +45,6 @@ joint_trajectory_controller:
       wrist_2_joint: {trajectory: 0.0, goal: 0.0}
       wrist_3_joint: {trajectory: 0.0, goal: 0.0}
     
-    # --- FIX 2: ADD PID GAINS (Stiffens the arm) ---
     gains:
       shoulder_pan_joint: {p: 1000.0, i: 0.0, d: 10.0}
       shoulder_lift_joint: {p: 1000.0, i: 0.0, d: 10.0}
