@@ -1,5 +1,3 @@
-# train_ppo.py
-
 import rclpy
 from stable_baselines3 import PPO  # <--- USING PPO
 from stable_baselines3.common.callbacks import (
@@ -11,17 +9,12 @@ from stable_baselines3.common.monitor import Monitor
 from hri_control.hri_env_final import HriEnv
 import os
 
+#creating environments and ppo paths
 def main():
-    # Initialize ROS2
     rclpy.init()
-
-    # Create environment
     env = HriEnv()
     env = Monitor(env)
 
-    # -----------------------------
-    # PPO-SPECIFIC PATHS (Separated from SAC)
-    # -----------------------------
     save_path = "./checkpoints_ppo/"
     log_path = "./eval_logs_ppo/"
     tb_log = "./ppo_hri_tensorboard/"
@@ -29,9 +22,6 @@ def main():
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(log_path, exist_ok=True)
 
-    # -----------------------------
-    # CALLBACKS
-    # -----------------------------
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
         save_path=save_path,
@@ -50,34 +40,28 @@ def main():
     )
     callback = CallbackList([checkpoint_callback, eval_callback])
 
-    # -----------------------------
-    # PPO HYPERPARAMETERS
-    # -----------------------------
-    print("Initializing PPO model...")
+   #Hyperparameters for PPO
+    print("Initializing PPO model")
 
     model = PPO(
         "MlpPolicy",
         env,
         verbose=1,
-        learning_rate=3e-4,     # Standard stable rate
-        n_steps=2048,           # Steps to collect before updating (On-Policy buffer)
-        batch_size=64,          # PPO usually prefers smaller batches than SAC
-        n_epochs=10,            # Reuse data 10 times for optimization
+        learning_rate=3e-4,     
+        n_steps=2048,          
+        batch_size=64,         
+        n_epochs=10,            
         gamma=0.99,
-        gae_lambda=0.95,        # Generalized Advantage Estimation
-        clip_range=0.2,         # Clip updates to prevent drastic policy changes
-        ent_coef=0.0,           # PPO handles exploration differently (usually 0.0 or small)
+        gae_lambda=0.95,        
+        clip_range=0.2,        
+        ent_coef=0.0,          
         tensorboard_log=tb_log
     )
 
-    # -----------------------------
-    # TRAINING
-    # -----------------------------
-
-    print("Starting PPO training for 500,000 steps...")
+    print("Starting PPO training")
     
     model.learn(
-        total_timesteps=500000,   # Match SAC exactly for fair comparison
+        total_timesteps=700000,  
         callback=callback
     )
 
