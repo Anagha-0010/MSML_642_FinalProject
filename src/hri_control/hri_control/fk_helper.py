@@ -35,7 +35,7 @@ def build_kdl_tree_from_urdf(urdf: URDF):
     for joint in urdf.joints:
         if joint.type not in ["revolute", "continuous", "prismatic", "fixed"]:
             continue
-
+            #exrcting the origin and rotatuon
         xyz = joint.origin.xyz if joint.origin else [0, 0, 0]
         rpy = joint.origin.rpy if joint.origin else [0, 0, 0]
 
@@ -44,7 +44,7 @@ def build_kdl_tree_from_urdf(urdf: URDF):
             kdl.Vector(*xyz)
         )
 
-        # Joint axis
+        #Joint axis
         if joint.axis:
             axis = kdl.Vector(*joint.axis)
         else:
@@ -89,7 +89,7 @@ class FKWrapper:
         #parsing the urdf
         self.urdf = URDF.from_xml_string(urdf_xml)
 
-        #determining the frames
+        #determinig the frames
         self.base_link = base_link if base_link else self.urdf.get_root()
         self.ee_link = find_ee_link_from_joint_list(self.urdf, joint_names)
 

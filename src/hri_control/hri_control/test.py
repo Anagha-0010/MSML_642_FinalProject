@@ -8,7 +8,7 @@ MODEL_PATH = "sac_hri_final_final.zip"
 def main():
     rclpy.init()
     print("TESTING SAC")
-    env = HriEnv()
+    env = HriEnv() #ros publishers nd subscribers talking to gazebo
     print(f"Loading model from {MODEL_PATH}")
     try:
         model = SAC.load(MODEL_PATH)
@@ -17,13 +17,13 @@ def main():
         return
 
     print("Model loaded successfully.")
-
+    #moving t start pos and sensor reading
     obs, _ = env.reset()
     step = 0
-
+    #control loop
     while rclpy.ok():
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = env.step(action)
+        action, _ = model.predict(obs, deterministic=True)#ppick the best action #no random exploration 
+        obs, reward, terminated, truncated, info = env.step(action)#new sensor readings,reaward for last move,end?,forceend
         dist = info.get('dist', 0.0)
         print(f"[Step {step}] Dist: {dist:.3f} | Reward: {reward:.3f}")
         

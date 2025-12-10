@@ -4,7 +4,7 @@ import rclpy
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from hri_control.hri_env_final import HriEnv
-from stable_baselines3 import PPO  # <--- Using PPO
+from stable_baselines3 import PPO  
 import numpy as np
 
 MODEL_PATH = "ppo_hri_final.zip"
@@ -20,7 +20,7 @@ def main():
         print("Model not found!")
         return
 
-    # Run Episode
+    #running episods herwe
     obs, _ = env.reset()
     robot_path = []
     target_path = []
@@ -41,20 +41,20 @@ def main():
     env.close()
     rclpy.shutdown()
 
-    # Plotting
+  
     robot_path = np.array(robot_path)
     target_path = np.array(target_path)
     
     fig = plt.figure(figsize=(14, 6))
 
-    # 3D Trajectory
+    #3D Trajectory ptting
     ax1 = fig.add_subplot(1, 2, 1, projection='3d')
     ax1.plot(robot_path[:,0], robot_path[:,1], robot_path[:,2], color='orange', linewidth=2, label='PPO Path')
     ax1.scatter(target_path[-1,0], target_path[-1,1], target_path[-1,2], color='red', marker='x', s=200)
     ax1.set_title('PPO Trajectory (Baseline)')
     ax1.legend()
 
-    # Distance
+    #plotting the dist
     ax2 = fig.add_subplot(1, 2, 2)
     ax2.plot(distances, color='orange', linewidth=2, label='PPO Distance')
     ax2.axhline(y=0.05, color='green', linestyle='--', label='Goal (5cm)')

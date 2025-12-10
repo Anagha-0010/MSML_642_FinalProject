@@ -8,7 +8,7 @@ from stable_baselines3.common.callbacks import (
 from stable_baselines3.common.monitor import Monitor
 from hri_control.hri_env_final import HriEnv
 
-#creating environment and add checkpoits to ensure if the system crashes we can train it again from the last checkpoint
+#creating environment and add checkpoits when system crashed we  trained it again from the last checkpoint
 def main():
     rclpy.init()
     env = HriEnv()
