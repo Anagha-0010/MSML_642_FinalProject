@@ -1,5 +1,3 @@
-# hri_env_final.py
-
 import rclpy
 from rclpy.node import Node
 import gymnasium as gym
@@ -13,6 +11,7 @@ import csv, os, time
 
 from hri_control.fk_helper import FKWrapper
 
+#defining the robot joints
 UR5_JOINTS = [
     "shoulder_pan_joint",
     "shoulder_lift_joint",
@@ -24,22 +23,20 @@ UR5_JOINTS = [
 
 MAX_VEL = 0.4
 
-
 class HriEnv(Node, gym.Env):
 
     def __init__(self):
         super().__init__("hri_env_node")
         gym.Env.__init__(self)
 
-        self.get_logger().info("HRI Environment FINAL (Reward-Shaped) starting...")
+        self.get_logger().info("HRI Environment starting")
 
-        # Observation: 6 joint pos + 6 vel + 7 EE pose (pos+rot) + 7 target (pos+rot) = 26
+        #Observation: 6 joint pos + 6 vel + 7 EE pose (pos+rot) + 7 target (pos+rot) = 26
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(26,), dtype=np.float32
         )
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
 
-        # ROS
         self.joint_sub = self.create_subscription(
             JointState, "/joint_states", self.joint_cb, 10
         )
@@ -50,7 +47,7 @@ class HriEnv(Node, gym.Env):
             JointTrajectory, "/joint_trajectory_controller/joint_trajectory", 10
         )
 
-        # State vars
+        #State Variables
         self.last_pos = None
         self.last_vel = None
         self.last_target = None
@@ -64,7 +61,7 @@ class HriEnv(Node, gym.Env):
         self.episode_reward = 0.0
         self.prev_dist = 0.0 # Initialize
 
-        # CSV logging
+        #Logging the rewards as well 
         self.log_path = os.path.expanduser("~/hri_reward_log.csv")
         if not os.path.exists(self.log_path):
             with open(self.log_path, "w") as f:
@@ -72,10 +69,6 @@ class HriEnv(Node, gym.Env):
                 writer.writerow(["episode", "reward"])
 
         self.episode_count = 0
-
-    # -----------------------------------------------------
-    # CALLBACKS
-    # -----------------------------------------------------
 
     def joint_cb(self, msg):
         pos, vel = [], []
@@ -105,10 +98,6 @@ class HriEnv(Node, gym.Env):
             dtype=np.float32,
         )
 
-    # -----------------------------------------------------
-    # ACTION -> TRAJECTORY
-    # -----------------------------------------------------
-
     def _publish_action(self, action):
         scaled = action * MAX_VEL
         new_pos = (self.last_pos + scaled * self.timer_period).tolist()
@@ -126,28 +115,24 @@ class HriEnv(Node, gym.Env):
 
         self.cmd_pub.publish(traj)
 
-    # -----------------------------------------------------
-    # STEP
-    # -----------------------------------------------------
-
     def step(self, action):
         if self.last_pos is None or self.last_target is None:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        # 1. Action Smoothing
+        #Action Smoothing
         old_action = self.prev_action.copy()
         action = 0.2 * action + 0.8 * old_action
         self.prev_action = action
 
-        # Apply action
+        #Apply action
         self._publish_action(action)
 
-        # Wait for physics
+        #Waiting for the action to play into the effect
         end_time = self.get_clock().now().nanoseconds + int(self.timer_period * 1e9)
         while self.get_clock().now().nanoseconds < end_time:
             rclpy.spin_once(self, timeout_sec=0.01)
 
-        # 2. Get State
+        #Getting state
         ee_state = self.fk.compute_fk(self.last_pos)
         ee_pos = ee_state[:3]
         ee_quat = ee_state[3:]
@@ -155,18 +140,13 @@ class HriEnv(Node, gym.Env):
         target_pos = self.last_target[:3]
         target_quat = self.last_target[3:]
         
-        # Calculate Distances
+        #Calculating the distance
         dist = float(np.linalg.norm(ee_pos - target_pos))
-        
-        # Calculate Distance Change (Shaping Reward)
-        # Use the value calculated in reset() or previous step
         delta_dist = self.prev_dist - dist
         self.prev_dist = dist
-
-        # Build Observation
         obs = np.concatenate([self.last_pos, self.last_vel, ee_state, self.last_target])
 
-        # Reward function
+        # REWARD FUNCTION
 
         #Distance Reward
         r_dist = float(np.exp(-1.0 * dist))
@@ -186,11 +166,11 @@ class HriEnv(Node, gym.Env):
         #Weights: Distance(2.0) + Progress(1.0) + Orientation(0.5)
         reward = (2.0 * r_dist) + r_progress + (0.5 * r_orient) - action_penalty - smooth_penalty
 
-        # Logging
+    
         if self.current_step % 20 == 0:
             self.get_logger().info(f"Dist: {dist:.3f} | Prog: {r_progress:.3f} | Rew: {reward:.3f}")
 
-        # Termination
+     
         terminated = dist < 0.05 and r_orient > 0.9
         truncated = self.current_step >= 200
 
@@ -209,9 +189,6 @@ class HriEnv(Node, gym.Env):
 
         return obs.astype(np.float32), reward, terminated, truncated, info
 
-    # -----------------------------------------------------
-    # RESET
-    # -----------------------------------------------------
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -225,11 +202,9 @@ class HriEnv(Node, gym.Env):
 
         ee_state = self.fk.compute_fk(self.last_pos)
         ee_pos = ee_state[:3]
-        
-        # --- FIX: Initialize prev_dist correctly for the new episode ---
+    
         target_pos = self.last_target[:3]
         self.prev_dist = float(np.linalg.norm(ee_pos - target_pos))
-        # ---------------------------------------------------------------
 
         obs = np.concatenate([self.last_pos, self.last_vel, ee_state, self.last_target])
         return obs.astype(np.float32), {}
