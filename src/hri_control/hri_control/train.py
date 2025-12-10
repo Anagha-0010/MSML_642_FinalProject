@@ -61,8 +61,6 @@ def main():
     )
 
     model.save("sac_hri_final_final")
-
-    # Shutdown ROS2
     rclpy.shutdown()
 
 
