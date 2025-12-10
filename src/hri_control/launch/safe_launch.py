@@ -2,34 +2,33 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, AppendEnvironmentVariable, TimerAction
+from launch.actions import IncludeLaunchDescription, AppendEnvironmentVariable, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, FindExecutable, LaunchConfiguration
+from launch.substitutions import Command, FindExecutable
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
+
 def generate_launch_description():
-    # LOCATE PACKAGES
+    #getting packages directories
     pkg_gazebo_ros = get_package_share_directory("gazebo_ros")
     pkg_ur_description = get_package_share_directory("ur_description")
     pkg_hri_control = get_package_share_directory("hri_control")
 
-    # GAZEBO PATHS
+    #paths used to set the model and plugin
     ur_description_path = os.path.join(pkg_ur_description, "..")
     hri_models_path = os.path.join(pkg_hri_control, "models")
     
     set_model_path = AppendEnvironmentVariable("GAZEBO_MODEL_PATH", f"{ur_description_path}:{hri_models_path}")
     export_api_plugin = AppendEnvironmentVariable("GAZEBO_PLUGIN_PATH", os.path.join(pkg_gazebo_ros, "lib"))
 
-    # --- THIS IS THE ONLY CHANGE: POINT TO YOUR NEW FILE ---
     xacro_file = os.path.join(pkg_hri_control, "urdf", "safe_demo.xacro")
-    # ------------------------------------------------------
 
-    # GENERATE ROBOT DESCRIPTION
+    #this is the robot description
     ur_robot_description_content = ParameterValue(
         Command([
             FindExecutable(name="xacro"), " ",
-            xacro_file, # Using your new file
+            xacro_file, 
             " ", "name:=ur",
             " ", "ur_type:=ur5e",
             " ", "sim_gazebo:=true",
@@ -38,7 +37,7 @@ def generate_launch_description():
     )
     ur_robot_description = {"robot_description": ur_robot_description_content}
 
-    # NODES
+    #nodes to spaw the robot and its joints
     ur_robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -67,7 +66,7 @@ def generate_launch_description():
         output="screen"
     )
 
-    # GAZEBO
+    #generating the gazebo world 
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(pkg_gazebo_ros, "launch", "gazebo.launch.py")),
         launch_arguments={
@@ -78,7 +77,7 @@ def generate_launch_description():
         }.items()
     )
 
-    # DELAY SPAWN
+    #delaying the spawn so that gazebo is ready when we spawn the hand model 
     delayed_robot_spawn = TimerAction(
         period=10.0,
         actions=[ur_robot_state_publisher, ur_spawn_robot, joint_state_broadcaster_spawner, joint_trajectory_controller_spawner]

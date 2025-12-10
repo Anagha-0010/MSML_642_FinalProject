@@ -2,22 +2,20 @@
 <sdf version="1.6">
     <world name="default">
 
-    <!-- REQUIRED: Gazebo–ROS bridge -->
+    <!--ROS and Gazebo connection-->
     <plugin name="gazebo_ros_api_plugin" filename="libgazebo_ros_api_plugin.so">
       <robotNamespace>/</robotNamespace>
     </plugin>
 
-    <!-- REQUIRED: Initializes ROS node inside Gazebo -->
+    <!--Initializing ROS node inside Gazebo-->
     <plugin name="gazebo_ros_init" filename="libgazebo_ros_init.so">
       <robotNamespace>/</robotNamespace>
     </plugin>
 
-    <!-- REQUIRED: Enables /spawn_entity service -->
+    <!--Enabing the entity services-->
     <plugin name="gazebo_ros_factory" filename="libgazebo_ros_factory.so">
       <robotNamespace>/</robotNamespace>
     </plugin>
-
-    <!-- NEW: Enables /set_entity_state and /get_entity_state -->
     <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
       <robotNamespace>/</robotNamespace>
     </plugin>

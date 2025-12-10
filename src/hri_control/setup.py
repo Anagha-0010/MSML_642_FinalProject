@@ -13,11 +13,11 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
 
-        # Launch files
+        #Launch files
         (os.path.join('share', package_name, 'launch'),
             glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
 
-        # URDF models
+        #URDF models
         (os.path.join('share', package_name, 'models'),
             glob('models/*.urdf')),
         
@@ -25,15 +25,12 @@ setup(
  	     glob('urdf/*')),
 
 
-        # Visual meshes
+        #meshes
         (os.path.join('share', package_name, 'models/meshes/visual'),
             glob('models/meshes/visual/*')),
 
-        # Collision meshes
-        (os.path.join('share', package_name, 'models/meshes/collision'),
-            glob('models/meshes/collision/*')),
 
-        # Config files (YAML)
+        #Config files 
         (os.path.join('share', package_name, 'config'),
             glob('config/*.*')),
             
